@@ -1,0 +1,82 @@
+{
+  "name": "omnimemory",
+  "displayName": "OmniMemory",
+  "description": "Local-first engineering memory capture for AI-era development workflows.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "private": true,
+  "engines": {
+    "vscode": "^1.92.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:omniMemory.generateFromCurrentContext",
+    "onCommand:omniMemory.searchMemories",
+    "onCommand:omniMemory.updateMemoryStatus",
+    "onCommand:omniMemory.openMemoryFolder"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "OmniMemory",
+      "properties": {
+        "omniMemory.databasePath": {
+          "type": "string",
+          "default": ".omnimemory/omnimemory.sqlite",
+          "description": "Workspace-relative path for the local SQLite database."
+        },
+        "omniMemory.memoryDirectory": {
+          "type": "string",
+          "default": ".memory",
+          "description": "Workspace-relative directory where Markdown memory cards are written."
+        },
+        "omniMemory.defaultConversationTool": {
+          "type": "string",
+          "default": "manual",
+          "description": "Source label used when the active editor text is captured as a conversation."
+        },
+        "omniMemory.maxDiffCharacters": {
+          "type": "number",
+          "default": 60000,
+          "minimum": 5000,
+          "maximum": 500000,
+          "description": "Maximum number of Git diff characters included in memory synthesis."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "omniMemory.generateFromCurrentContext",
+        "title": "OmniMemory: Generate Memory From Current Context"
+      },
+      {
+        "command": "omniMemory.searchMemories",
+        "title": "OmniMemory: Search Memories"
+      },
+      {
+        "command": "omniMemory.updateMemoryStatus",
+        "title": "OmniMemory: Update Memory Status"
+      },
+      {
+        "command": "omniMemory.openMemoryFolder",
+        "title": "OmniMemory: Open Memory Folder"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile"
+  },
+  "dependencies": {
+    "sql.js": "1.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "@types/sql.js": "^1.4.9",
+    "@types/vscode": "^1.92.0",
+    "typescript": "^5.5.4"
+  }
+}
