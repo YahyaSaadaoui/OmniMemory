@@ -24,6 +24,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('omniMemory.verifyMemoryWithCommand', () => runCommand(context, verifyMemoryWithCommand)),
     vscode.commands.registerCommand('omniMemory.reviewMemoryQueue', () => runCommand(context, reviewMemoryQueue)),
     vscode.commands.registerCommand('omniMemory.syncActiveMemoryMarkdown', () => runCommand(context, syncActiveMemoryMarkdown)),
+    vscode.commands.registerCommand('omniMemory.refreshRelatedMemories', () => runCommand(context, refreshRelatedMemories)),
     vscode.commands.registerCommand('omniMemory.openMemoryFolder', () => runCommand(context, openMemoryFolder))
   );
 
@@ -112,7 +113,9 @@ async function generateMemory(
       const memoryDirectory = resolveWorkspacePath(root, config.memoryDirectory);
       const markdownPath = await writeMemoryMarkdown(memoryDirectory, card);
       await db.setMarkdownPath(card.id, path.relative(root, markdownPath));
+      await db.refreshSimilarMemoryLinks(card.id);
       const savedCard = db.getMemoryCard(card.id) ?? card;
+      await overwriteMemoryMarkdown(markdownPath, savedCard);
 
       const action = await vscode.window.showInformationMessage(
         `OmniMemory saved "${savedCard.title}".`,
@@ -280,12 +283,37 @@ async function syncActiveMemoryMarkdown(context: vscode.ExtensionContext): Promi
     await db.setMarkdownPath(updated.id, path.relative(root, targetPath));
   }
 
+  await db.refreshSimilarMemoryLinks(updated.id);
   const savedCard = db.getMemoryCard(updated.id) ?? updated;
   if (targetPath) {
     await overwriteMemoryMarkdown(targetPath, savedCard);
   }
 
   await vscode.window.showInformationMessage(`OmniMemory synced "${savedCard.title}".`);
+}
+
+async function refreshRelatedMemories(context: vscode.ExtensionContext): Promise<void> {
+  const root = getWorkspaceRoot();
+  const db = await getStore(context);
+  const memoryId = await resolveMemoryIdFromActiveMarkdownOrPick(context, db);
+
+  if (!memoryId) {
+    return;
+  }
+
+  const links = await db.refreshSimilarMemoryLinks(memoryId);
+  const card = db.getMemoryCard(memoryId);
+
+  if (!card) {
+    await vscode.window.showWarningMessage('That memory card no longer exists.');
+    return;
+  }
+
+  if (card.markdownPath) {
+    await overwriteMemoryMarkdown(path.resolve(root, card.markdownPath), card);
+  }
+
+  await vscode.window.showInformationMessage(`OmniMemory linked ${links.length} related memories for "${card.title}".`);
 }
 
 async function verifyMemoryWithCommand(context: vscode.ExtensionContext): Promise<void> {
@@ -481,6 +509,24 @@ async function openMemory(context: vscode.ExtensionContext, id: string): Promise
     language: 'markdown'
   });
   await vscode.window.showTextDocument(document);
+}
+
+async function resolveMemoryIdFromActiveMarkdownOrPick(
+  context: vscode.ExtensionContext,
+  db: SQLiteMemoryStore
+): Promise<string | undefined> {
+  const editor = vscode.window.activeTextEditor;
+
+  if (editor?.document.languageId === 'markdown') {
+    try {
+      return parseMemoryMarkdown(editor.document.getText()).memoryId;
+    } catch {
+      // Fall back to picker if the active Markdown file is not an OmniMemory card.
+    }
+  }
+
+  const picked = await pickMemory(db.listRecentMemories(), 'Choose a memory card');
+  return picked?.id;
 }
 
 async function getStore(context: vscode.ExtensionContext): Promise<SQLiteMemoryStore> {

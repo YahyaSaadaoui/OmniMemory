@@ -60,6 +60,10 @@ ${card.lessons}
 
 ${formatInlineTags(card.tags)}
 
+## Related Memories
+
+${formatRelatedMemories(card)}
+
 ## Verification
 
 ${formatVerification(card)}
@@ -90,6 +94,20 @@ function formatInlineTags(tags: string[]): string {
   }
 
   return tags.map((tag) => `\`${tag}\``).join(' ');
+}
+
+function formatRelatedMemories(card: MemoryCard): string {
+  if (card.relatedMemories.length === 0) {
+    return 'No related memories linked yet.';
+  }
+
+  return card.relatedMemories
+    .map((link) => {
+      const reasons = link.reasons.length > 0 ? ` · ${link.reasons.join(', ')}` : '';
+      const path = link.markdownPath ? ` · ${link.markdownPath}` : '';
+      return `- ${link.title} (${link.status}, score ${link.score}${reasons}${path})`;
+    })
+    .join('\n');
 }
 
 function formatVerification(card: MemoryCard): string {

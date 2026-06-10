@@ -26,11 +26,14 @@ For clean commit captures, OmniMemory checks whether that commit already has a m
 - `OmniMemory: Verify Memory With Command`
 - `OmniMemory: Review Memory Queue`
 - `OmniMemory: Sync Active Memory Markdown`
+- `OmniMemory: Refresh Related Memories`
 - `OmniMemory: Open Memory Folder`
 
 Search ranks local memories by title, tags, files changed, root cause, solution, problem, symptoms, lessons, and attempts.
 
 Context search uses the active selection, nearby diagnostics, current line, surrounding code, and file name to answer whether a similar issue has already been captured.
+
+Related memory links are refreshed after generation or Markdown sync, and can be rebuilt manually with `OmniMemory: Refresh Related Memories`.
 
 Verification can run a local workspace command, store the exit code and output as evidence, and mark the memory `Verified` when the command succeeds.
 

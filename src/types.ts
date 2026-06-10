@@ -43,6 +43,7 @@ export interface MemoryCard {
   sourceConversationId: string | null;
   markdownPath: string | null;
   verificationEvents: VerificationEvent[];
+  relatedMemories: RelatedMemoryLink[];
 }
 
 export interface MemoryDraft {
@@ -108,4 +109,15 @@ export interface VerificationEventDraft {
   command: string;
   exitCode: number;
   output: string;
+}
+
+export interface RelatedMemoryLink {
+  sourceMemoryId: string;
+  targetMemoryId: string;
+  title: string;
+  status: MemoryStatus;
+  score: number;
+  reasons: string[];
+  markdownPath: string | null;
+  createdAt: string;
 }

@@ -10,6 +10,7 @@ import {
   MemoryDraft,
   MemoryCardUpdate,
   MemoryStatus,
+  RelatedMemoryLink,
   SearchResult,
   VerificationEvent,
   VerificationEventDraft
@@ -104,7 +105,8 @@ export class SQLiteMemoryStore {
       createdAt: now,
       updatedAt: now,
       markdownPath: null,
-      verificationEvents: []
+      verificationEvents: [],
+      relatedMemories: []
     };
 
     this.database.run(
@@ -274,7 +276,8 @@ export class SQLiteMemoryStore {
       const card = rowToMemoryCard(statement.getAsObject() as Row);
       return {
         ...card,
-        verificationEvents: this.listVerificationEvents(card.id)
+        verificationEvents: this.listVerificationEvents(card.id),
+        relatedMemories: this.listRelatedMemoryLinks(card.id)
       };
     } finally {
       statement.free();
@@ -323,6 +326,69 @@ export class SQLiteMemoryStore {
     } finally {
       statement.free();
     }
+  }
+
+  async refreshSimilarMemoryLinks(memoryId: string, limit = 5): Promise<RelatedMemoryLink[]> {
+    const card = this.getMemoryCard(memoryId);
+    if (!card) {
+      return [];
+    }
+
+    const query = buildSimilarityQuery(card);
+    const matches = this.searchMemories(query, 25)
+      .filter((result) => result.id !== memoryId)
+      .filter((result) => (result.score ?? 0) >= 12)
+      .slice(0, limit);
+
+    this.database.run('DELETE FROM memory_links WHERE source_memory_id = ?', [memoryId]);
+
+    const now = new Date().toISOString();
+    for (const match of matches) {
+      this.database.run(
+        `INSERT INTO memory_links (id, source_memory_id, target_memory_id, score, reasons, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          createId('link'),
+          memoryId,
+          match.id,
+          match.score ?? 0,
+          JSON.stringify(match.matchedFields ?? []),
+          now
+        ]
+      );
+    }
+
+    await this.save();
+    return this.listRelatedMemoryLinks(memoryId);
+  }
+
+  listRelatedMemoryLinks(memoryId: string): RelatedMemoryLink[] {
+    const statement = this.database.prepare(
+      `SELECT ml.source_memory_id,
+              ml.target_memory_id,
+              ml.score,
+              ml.reasons,
+              ml.created_at,
+              mc.title,
+              mc.status,
+              mc.markdown_path
+       FROM memory_links ml
+       INNER JOIN memory_cards mc ON mc.id = ml.target_memory_id
+       WHERE ml.source_memory_id = ?
+       ORDER BY ml.score DESC, ml.created_at DESC`
+    );
+    const results: RelatedMemoryLink[] = [];
+
+    try {
+      statement.bind([memoryId]);
+      while (statement.step()) {
+        results.push(rowToRelatedMemoryLink(statement.getAsObject() as Row));
+      }
+    } finally {
+      statement.free();
+    }
+
+    return results;
   }
 
   searchMemories(query: string, limit = 20): SearchResult[] {
@@ -511,10 +577,23 @@ export class SQLiteMemoryStore {
         FOREIGN KEY(memory_id) REFERENCES memory_cards(id)
       );
 
+      CREATE TABLE IF NOT EXISTS memory_links (
+        id TEXT PRIMARY KEY,
+        source_memory_id TEXT NOT NULL,
+        target_memory_id TEXT NOT NULL,
+        score INTEGER NOT NULL,
+        reasons TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(source_memory_id) REFERENCES memory_cards(id),
+        FOREIGN KEY(target_memory_id) REFERENCES memory_cards(id)
+      );
+
       CREATE INDEX IF NOT EXISTS idx_memory_cards_status ON memory_cards(status);
       CREATE INDEX IF NOT EXISTS idx_memory_cards_created_at ON memory_cards(created_at);
       CREATE INDEX IF NOT EXISTS idx_memory_cards_title ON memory_cards(title);
       CREATE INDEX IF NOT EXISTS idx_verification_events_memory_id ON verification_events(memory_id);
+      CREATE INDEX IF NOT EXISTS idx_memory_links_source_memory_id ON memory_links(source_memory_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_links_pair ON memory_links(source_memory_id, target_memory_id);
     `);
     this.runMigration('ALTER TABLE commits ADD COLUMN has_working_changes INTEGER NOT NULL DEFAULT 0');
     this.runMigration('ALTER TABLE memory_cards ADD COLUMN quality_score INTEGER NOT NULL DEFAULT 0');
@@ -558,7 +637,8 @@ function rowToMemoryCard(row: Row): MemoryCard {
     sourceCommitId: nullableString(row.source_commit_id),
     sourceConversationId: nullableString(row.source_conversation_id),
     markdownPath: nullableString(row.markdown_path),
-    verificationEvents: []
+    verificationEvents: [],
+    relatedMemories: []
   };
 }
 
@@ -599,6 +679,32 @@ function rowToVerificationEvent(row: Row): VerificationEvent {
     output: asString(row.output),
     createdAt: asString(row.created_at)
   };
+}
+
+function rowToRelatedMemoryLink(row: Row): RelatedMemoryLink {
+  return {
+    sourceMemoryId: asString(row.source_memory_id),
+    targetMemoryId: asString(row.target_memory_id),
+    title: asString(row.title),
+    status: asString(row.status) as MemoryStatus,
+    score: Number(row.score),
+    reasons: parseJsonArray(row.reasons),
+    markdownPath: nullableString(row.markdown_path),
+    createdAt: asString(row.created_at)
+  };
+}
+
+function buildSimilarityQuery(card: MemoryCard): string {
+  return [
+    card.title,
+    card.problem,
+    card.symptoms,
+    card.rootCause,
+    card.solution,
+    card.lessons,
+    card.filesChanged.join(' '),
+    card.tags.join(' ')
+  ].filter(Boolean).join('\n');
 }
 
 function tokenizeQuery(query: string): string[] {

@@ -86,6 +86,37 @@ async function main() {
   await store.insertConversation(weakConversation);
   await store.insertCommit(weakCommit);
   const weakCard = await store.insertMemoryCard(synthesizeMemory(weakConversation, weakCommit));
+  const previousPaymentConversation = {
+    id: 'conversation_payment_previous',
+    tool: 'manual',
+    content: [
+      '# Payment Callback Null Provider Response',
+      '## Problem',
+      'Payment callback reconciliation crashed when the provider returned a null response.',
+      '## Root Cause',
+      'Provider response validation did not reject null callback payloads before retry state changed.',
+      '## Final Solution',
+      'Added provider response validation before callback retry state transitions.',
+      '## Lessons Learned',
+      'Validate payment provider responses before mutating callback retry state.'
+    ].join('\n'),
+    timestamp: new Date().toISOString()
+  };
+  const previousPaymentCommit = {
+    id: 'commit_payment_previous',
+    hash: 'pay789',
+    message: 'validate payment callback provider response',
+    author: 'Smoke Test <test@example.com>',
+    branch: 'main',
+    filesChanged: ['src/payments/callback.ts'],
+    hasWorkingChanges: false,
+    diffSummary: 'src/payments/callback.ts | 12 ++++++++++--',
+    diff: '',
+    createdAt: new Date().toISOString()
+  };
+  await store.insertConversation(previousPaymentConversation);
+  await store.insertCommit(previousPaymentCommit);
+  const previousPaymentCard = await store.insertMemoryCard(synthesizeMemory(previousPaymentConversation, previousPaymentCommit));
   const reviewQueue = store.listReviewQueue();
   const editedMarkdown = renderMemoryCardMarkdown(weakCard)
     .replace('fix bug', 'Payment Callback Retry Regression')
@@ -98,6 +129,9 @@ async function main() {
     .replace('## Tags\n\nN/A', '## Tags\n\n`payments` `typescript`');
   const parsedMarkdown = parseMemoryMarkdown(editedMarkdown);
   const syncedCard = await store.updateMemoryCardContent(parsedMarkdown.memoryId, parsedMarkdown.update);
+  await store.refreshSimilarMemoryLinks(syncedCard.id);
+  const syncedWithLinks = store.getMemoryCard(syncedCard.id);
+  const relatedMarkdown = renderMemoryCardMarkdown(syncedWithLinks);
   const contextQuery = buildRetrievalQuery({
     selectedText: 'Null provider response caused payment callback retries to loop.',
     diagnosticMessages: ['TypeError: Cannot read properties of null'],
@@ -117,6 +151,8 @@ async function main() {
   assert(reviewQueue.some((result) => result.id === weakCard.id), 'review queue did not include weak memory');
   assert(syncedCard && syncedCard.title === 'Payment Callback Retry Regression', 'Markdown sync did not update title');
   assert(syncedCard && syncedCard.qualityScore > weakCard.qualityScore, 'Markdown sync did not recompute quality');
+  assert(syncedWithLinks.relatedMemories.some((link) => link.targetMemoryId === previousPaymentCard.id), 'similar memory link was not created');
+  assert(relatedMarkdown.includes(previousPaymentCard.title), 'related memory was not rendered');
   assert(contextQuery.includes('Null provider response'), 'context query did not include selected text');
   assert(contextResults.some((result) => result.id === weakCard.id), 'context search did not find synced memory');
   assert(schemaResults.length === 1, 'schema search did not find the memory');
