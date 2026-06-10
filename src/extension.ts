@@ -10,6 +10,7 @@ import { sanitizeEngineeringText } from './security/sanitizer';
 import { SQLiteMemoryStore } from './storage/sqliteMemoryStore';
 import { CapturedConversation, MemoryStatus, SearchResult } from './types';
 import { buildRetrievalQuery } from './retrieval/contextQuery';
+import { buildSimilaritySuggestionKey, shouldSuggestSimilarMemory } from './retrieval/similaritySuggestion';
 import { runVerificationCommand } from './verification/commandVerifier';
 
 let store: SQLiteMemoryStore | undefined;
@@ -29,6 +30,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   startCommitDetection(context);
+  startDiagnosticSimilaritySearch(context);
 }
 
 export function deactivate(): void {
@@ -456,6 +458,115 @@ function startCommitDetection(context: vscode.ExtensionContext): void {
   });
 }
 
+function startDiagnosticSimilaritySearch(context: vscode.ExtensionContext): void {
+  const config = getConfig();
+  if (!config.enableDiagnosticSimilaritySearch || !vscode.workspace.workspaceFolders?.length) {
+    return;
+  }
+
+  const promptedKeys = new Set<string>();
+  let timer: NodeJS.Timeout | undefined;
+  let searchInFlight = false;
+
+  const schedule = () => {
+    if (timer) {
+      clearTimeout(timer);
+    }
+
+    timer = setTimeout(() => {
+      checkDiagnostics().catch(() => undefined);
+    }, Math.max(250, config.diagnosticSimilarityDebounceMs));
+  };
+
+  const checkDiagnostics = async () => {
+    if (searchInFlight) {
+      return;
+    }
+
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+      return;
+    }
+
+    const diagnostics = vscode.languages
+      .getDiagnostics(editor.document.uri)
+      .filter((diagnostic) => diagnostic.severity === vscode.DiagnosticSeverity.Error || diagnostic.severity === vscode.DiagnosticSeverity.Warning)
+      .slice(0, 5);
+
+    if (diagnostics.length === 0) {
+      return;
+    }
+
+    const query = buildQueryFromDiagnostics(editor, diagnostics);
+    if (!query) {
+      return;
+    }
+
+    searchInFlight = true;
+    try {
+      const db = await getStore(context);
+      const [topResult] = db.searchMemories(query, 1);
+      if (!topResult) {
+        return;
+      }
+
+      const diagnosticMessages = diagnostics.map((diagnostic) => diagnostic.message);
+      const suggestionInput = {
+        uri: editor.document.uri.toString(),
+        diagnosticMessages,
+        result: topResult,
+        minScore: config.diagnosticSimilarityMinScore
+      };
+
+      if (!shouldSuggestSimilarMemory(suggestionInput)) {
+        return;
+      }
+
+      const key = buildSimilaritySuggestionKey(suggestionInput);
+      if (promptedKeys.has(key)) {
+        return;
+      }
+
+      promptedKeys.add(key);
+      if (promptedKeys.size > 200) {
+        promptedKeys.clear();
+        promptedKeys.add(key);
+      }
+
+      const action = await vscode.window.showInformationMessage(
+        `OmniMemory found a similar memory: "${topResult.title}".`,
+        'Open Memory',
+        'Ignore'
+      );
+
+      if (action === 'Open Memory') {
+        await openMemory(context, topResult.id);
+      }
+    } finally {
+      searchInFlight = false;
+    }
+  };
+
+  context.subscriptions.push(
+    vscode.languages.onDidChangeDiagnostics((event) => {
+      const activeUri = vscode.window.activeTextEditor?.document.uri.toString();
+      if (!activeUri || event.uris.some((uri) => uri.toString() === activeUri)) {
+        schedule();
+      }
+    }),
+    vscode.window.onDidChangeActiveTextEditor(() => schedule()),
+    {
+      dispose: () => {
+        if (timer) {
+          clearTimeout(timer);
+        }
+      }
+    }
+  );
+
+  schedule();
+}
+
 async function shouldSkipDuplicateCleanCommit(
   context: vscode.ExtensionContext,
   db: SQLiteMemoryStore,
@@ -580,6 +691,21 @@ function buildQueryFromActiveEditor(): string {
     diagnosticMessages,
     currentLine,
     surroundingText,
+    fileName: path.basename(document.fileName)
+  });
+}
+
+function buildQueryFromDiagnostics(editor: vscode.TextEditor, diagnostics: vscode.Diagnostic[]): string {
+  const document = editor.document;
+  const primaryDiagnostic = diagnostics[0];
+  const line = primaryDiagnostic.range.start.line;
+  const startLine = Math.max(0, line - 3);
+  const endLine = Math.min(document.lineCount - 1, line + 3);
+
+  return buildRetrievalQuery({
+    diagnosticMessages: diagnostics.map((diagnostic) => diagnostic.message),
+    currentLine: document.lineAt(line).text,
+    surroundingText: document.getText(new vscode.Range(startLine, 0, endLine, document.lineAt(endLine).text.length)),
     fileName: path.basename(document.fileName)
   });
 }

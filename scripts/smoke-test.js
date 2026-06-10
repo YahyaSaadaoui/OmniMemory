@@ -7,6 +7,7 @@ const { renderMemoryCardMarkdown, writeMemoryMarkdown } = require('../out/memory
 const { parseMemoryMarkdown } = require('../out/memory/markdownParser');
 const { synthesizeMemory } = require('../out/memory/synthesizer');
 const { buildRetrievalQuery } = require('../out/retrieval/contextQuery');
+const { buildSimilaritySuggestionKey, shouldSuggestSimilarMemory } = require('../out/retrieval/similaritySuggestion');
 
 async function main() {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omnimemory-smoke-'));
@@ -140,6 +141,13 @@ async function main() {
     fileName: 'callback.ts'
   });
   const contextResults = store.searchMemories(contextQuery);
+  const suggestionInput = {
+    uri: 'file:///workspace/src/payments/callback.ts',
+    diagnosticMessages: ['TypeError: Cannot read properties of null'],
+    result: contextResults[0],
+    minScore: 20
+  };
+  const suggestionKey = buildSimilaritySuggestionKey(suggestionInput);
 
   assert(card.rootCause === 'Schema compatibility mismatch between producer and consumer.', 'root cause was not synthesized');
   assert(card.qualityScore >= 70, 'complete memory was scored too low');
@@ -155,6 +163,8 @@ async function main() {
   assert(relatedMarkdown.includes(previousPaymentCard.title), 'related memory was not rendered');
   assert(contextQuery.includes('Null provider response'), 'context query did not include selected text');
   assert(contextResults.some((result) => result.id === weakCard.id), 'context search did not find synced memory');
+  assert(shouldSuggestSimilarMemory(suggestionInput), 'diagnostic similarity threshold rejected a good match');
+  assert(suggestionKey.includes(contextResults[0].id), 'diagnostic suggestion key did not include result id');
   assert(schemaResults.length === 1, 'schema search did not find the memory');
   assert(fileResults.length === 1, 'file search did not find the memory');
   assert(tagResults.length === 1, 'tag search did not find the memory');

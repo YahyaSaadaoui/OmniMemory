@@ -33,6 +33,8 @@ Search ranks local memories by title, tags, files changed, root cause, solution,
 
 Context search uses the active selection, nearby diagnostics, current line, surrounding code, and file name to answer whether a similar issue has already been captured.
 
+When diagnostic similarity search is enabled, OmniMemory watches active editor errors and warnings and suggests the best matching prior memory above the configured score threshold.
+
 Related memory links are refreshed after generation or Markdown sync, and can be rebuilt manually with `OmniMemory: Refresh Related Memories`.
 
 Verification can run a local workspace command, store the exit code and output as evidence, and mark the memory `Verified` when the command succeeds.
@@ -67,3 +69,6 @@ The database path and memory directory can be changed in VS Code settings.
 - `omniMemory.commitDetectionIntervalSeconds`
 - `omniMemory.verificationCommand`
 - `omniMemory.maxVerificationOutputCharacters`
+- `omniMemory.enableDiagnosticSimilaritySearch`
+- `omniMemory.diagnosticSimilarityMinScore`
+- `omniMemory.diagnosticSimilarityDebounceMs`

@@ -74,6 +74,25 @@
           "minimum": 1000,
           "maximum": 50000,
           "description": "Maximum command output characters stored as verification evidence."
+        },
+        "omniMemory.enableDiagnosticSimilaritySearch": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically search OmniMemory when the active editor has errors or warnings."
+        },
+        "omniMemory.diagnosticSimilarityMinScore": {
+          "type": "number",
+          "default": 20,
+          "minimum": 1,
+          "maximum": 200,
+          "description": "Minimum local relevance score required before OmniMemory suggests a similar memory for diagnostics."
+        },
+        "omniMemory.diagnosticSimilarityDebounceMs": {
+          "type": "number",
+          "default": 1500,
+          "minimum": 250,
+          "maximum": 10000,
+          "description": "Debounce delay before searching memories for active editor diagnostics."
         }
       }
     },

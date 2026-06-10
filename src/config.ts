@@ -10,6 +10,9 @@ export interface OmniMemoryConfig {
   commitDetectionIntervalSeconds: number;
   verificationCommand: string;
   maxVerificationOutputCharacters: number;
+  enableDiagnosticSimilaritySearch: boolean;
+  diagnosticSimilarityMinScore: number;
+  diagnosticSimilarityDebounceMs: number;
 }
 
 export function getConfig(): OmniMemoryConfig {
@@ -23,7 +26,10 @@ export function getConfig(): OmniMemoryConfig {
     enableCommitDetection: config.get<boolean>('enableCommitDetection', true),
     commitDetectionIntervalSeconds: config.get<number>('commitDetectionIntervalSeconds', 20),
     verificationCommand: config.get<string>('verificationCommand', 'npm test'),
-    maxVerificationOutputCharacters: config.get<number>('maxVerificationOutputCharacters', 8000)
+    maxVerificationOutputCharacters: config.get<number>('maxVerificationOutputCharacters', 8000),
+    enableDiagnosticSimilaritySearch: config.get<boolean>('enableDiagnosticSimilaritySearch', true),
+    diagnosticSimilarityMinScore: config.get<number>('diagnosticSimilarityMinScore', 20),
+    diagnosticSimilarityDebounceMs: config.get<number>('diagnosticSimilarityDebounceMs', 1500)
   };
 }
 
