@@ -74,8 +74,8 @@ export class SQLiteMemoryStore {
 
   async insertCommit(commit: CapturedCommit): Promise<void> {
     this.database.run(
-      `INSERT OR REPLACE INTO commits (id, hash, message, author, branch, files_changed, diff_summary, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT OR REPLACE INTO commits (id, hash, message, author, branch, files_changed, has_working_changes, diff_summary, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         commit.id,
         commit.hash,
@@ -83,6 +83,7 @@ export class SQLiteMemoryStore {
         commit.author,
         commit.branch,
         JSON.stringify(commit.filesChanged),
+        commit.hasWorkingChanges ? 1 : 0,
         commit.diffSummary,
         commit.createdAt
       ]
@@ -239,6 +240,29 @@ export class SQLiteMemoryStore {
     return results;
   }
 
+  findMemoryByCommitHash(hash: string): SearchResult | undefined {
+    const statement = this.database.prepare(
+      `SELECT mc.id, mc.title, mc.problem, mc.root_cause, mc.solution, mc.status, mc.confidence, mc.created_at, mc.markdown_path
+       FROM memory_cards mc
+       INNER JOIN commits c ON c.id = mc.source_commit_id
+       WHERE c.hash = ?
+         AND c.has_working_changes = 0
+       ORDER BY mc.created_at DESC
+       LIMIT 1`
+    );
+
+    try {
+      statement.bind([hash]);
+      if (!statement.step()) {
+        return undefined;
+      }
+
+      return rowToSearchResult(statement.getAsObject() as Row);
+    } finally {
+      statement.free();
+    }
+  }
+
   searchMemories(query: string, limit = 20): SearchResult[] {
     const tokens = tokenizeQuery(query);
     if (tokens.length === 0) {
@@ -367,6 +391,7 @@ export class SQLiteMemoryStore {
         author TEXT,
         branch TEXT,
         files_changed TEXT NOT NULL DEFAULT '[]',
+        has_working_changes INTEGER NOT NULL DEFAULT 0,
         diff_summary TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL
       );
@@ -402,11 +427,20 @@ export class SQLiteMemoryStore {
       CREATE INDEX IF NOT EXISTS idx_memory_cards_title ON memory_cards(title);
       CREATE INDEX IF NOT EXISTS idx_verification_events_memory_id ON verification_events(memory_id);
     `);
+    this.runMigration('ALTER TABLE commits ADD COLUMN has_working_changes INTEGER NOT NULL DEFAULT 0');
   }
 
   private async save(): Promise<void> {
     const data = this.database.export();
     await fs.writeFile(this.dbPath, Buffer.from(data));
+  }
+
+  private runMigration(sql: string): void {
+    try {
+      this.database.run(sql);
+    } catch {
+      // SQLite has no ADD COLUMN IF NOT EXISTS; repeated migrations are harmless here.
+    }
   }
 }
 

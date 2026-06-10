@@ -15,6 +15,7 @@ export interface CapturedCommit {
   author: string | null;
   branch: string | null;
   filesChanged: string[];
+  hasWorkingChanges: boolean;
   diffSummary: string;
   diff: string;
   createdAt: string;

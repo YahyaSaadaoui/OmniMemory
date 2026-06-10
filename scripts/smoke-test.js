@@ -36,6 +36,7 @@ async function main() {
     author: 'Smoke Test <test@example.com>',
     branch: 'main',
     filesChanged: ['src/kafka/consumer.ts'],
+    hasWorkingChanges: false,
     diffSummary: 'src/kafka/consumer.ts | 8 +++++---',
     diff: '',
     createdAt: new Date().toISOString()
@@ -60,10 +61,12 @@ async function main() {
   const fileResults = store.searchMemories('consumer.ts');
   const tagResults = store.searchMemories('kafka');
   const verificationEvents = store.listVerificationEvents(card.id);
+  const duplicate = store.findMemoryByCommitHash('abc123');
 
   assert(card.rootCause === 'Schema compatibility mismatch between producer and consumer.', 'root cause was not synthesized');
   assert(verified && verified.status === 'Verified', 'memory was not marked verified');
   assert(verificationEvents.length === 1, 'verification event was not stored');
+  assert(duplicate && duplicate.id === card.id, 'commit duplicate lookup did not find the memory');
   assert(schemaResults.length === 1, 'schema search did not find the memory');
   assert(fileResults.length === 1, 'file search did not find the memory');
   assert(tagResults.length === 1, 'tag search did not find the memory');

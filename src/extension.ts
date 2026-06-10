@@ -93,6 +93,10 @@ async function generateMemory(
       };
       const db = await getStore(context);
 
+      if (await shouldSkipDuplicateCleanCommit(context, db, commit)) {
+        return;
+      }
+
       progress.report({ message: 'Synthesizing memory card...' });
       const draft = synthesizeMemory(conversation, commit);
       await db.insertConversation(conversation);
@@ -298,6 +302,11 @@ function startCommitDetection(context: vscode.ExtensionContext): void {
     }
 
     lastSeenHead = currentHead;
+    const db = await getStore(context);
+    if (db.findMemoryByCommitHash(currentHead)) {
+      return;
+    }
+
     promptInFlight = true;
     try {
       const action = await vscode.window.showInformationMessage(
@@ -324,6 +333,34 @@ function startCommitDetection(context: vscode.ExtensionContext): void {
   context.subscriptions.push({
     dispose: () => clearInterval(timer)
   });
+}
+
+async function shouldSkipDuplicateCleanCommit(
+  context: vscode.ExtensionContext,
+  db: SQLiteMemoryStore,
+  commit: { hash: string | null; hasWorkingChanges: boolean }
+): Promise<boolean> {
+  if (!commit.hash || commit.hasWorkingChanges) {
+    return false;
+  }
+
+  const existing = db.findMemoryByCommitHash(commit.hash);
+  if (!existing) {
+    return false;
+  }
+
+  const action = await vscode.window.showInformationMessage(
+    `OmniMemory already has a memory for commit ${commit.hash.slice(0, 7)}.`,
+    'Open Existing',
+    'Generate Anyway'
+  );
+
+  if (action === 'Open Existing') {
+    await openMemory(context, existing.id);
+    return true;
+  }
+
+  return action !== 'Generate Anyway';
 }
 
 async function openMemory(context: vscode.ExtensionContext, id: string): Promise<void> {

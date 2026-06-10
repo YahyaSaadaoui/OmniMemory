@@ -14,6 +14,8 @@ If no editor text is available, OmniMemory asks for a short note and can fall ba
 
 When commit detection is enabled, OmniMemory watches the current Git `HEAD` and prompts to generate a memory after a new commit appears.
 
+For clean commit captures, OmniMemory checks whether that commit already has a memory and offers to open the existing card instead of creating a duplicate.
+
 ## Commands
 
 - `OmniMemory: Generate Memory From Current Context`

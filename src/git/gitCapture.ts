@@ -88,6 +88,7 @@ export async function captureGitContext(workspaceRoot: string, maxDiffCharacters
       author: null,
       branch: null,
       filesChanged: [],
+      hasWorkingChanges: false,
       diffSummary: 'Workspace is not inside a Git repository.',
       diff: '',
       createdAt: now
@@ -99,6 +100,7 @@ export async function captureGitContext(workspaceRoot: string, maxDiffCharacters
   const message = await runGit(['log', '-1', '--pretty=%B'], gitRoot);
   const author = await runGit(['log', '-1', '--pretty=%an <%ae>'], gitRoot);
   const working = await collectWorkingDiff(gitRoot);
+  const hasWorkingChanges = Boolean(working.diff || working.files.length > 0);
   const lastCommit = working.diff || working.files.length > 0
     ? { diff: '', summary: '', files: [] }
     : await collectLastCommitDiff(gitRoot, hash);
@@ -113,6 +115,7 @@ export async function captureGitContext(workspaceRoot: string, maxDiffCharacters
     author,
     branch,
     filesChanged: files,
+    hasWorkingChanges,
     diffSummary: summary || 'No Git diff or recent commit context was available.',
     diff: truncate(diff, maxDiffCharacters),
     createdAt: now
