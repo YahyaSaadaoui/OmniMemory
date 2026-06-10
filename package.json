@@ -19,6 +19,7 @@
     "onCommand:omniMemory.updateMemoryStatus",
     "onCommand:omniMemory.verifyMemoryWithCommand",
     "onCommand:omniMemory.reviewMemoryQueue",
+    "onCommand:omniMemory.syncActiveMemoryMarkdown",
     "onCommand:omniMemory.openMemoryFolder"
   ],
   "main": "./out/extension.js",
@@ -98,6 +99,10 @@
       {
         "command": "omniMemory.reviewMemoryQueue",
         "title": "OmniMemory: Review Memory Queue"
+      },
+      {
+        "command": "omniMemory.syncActiveMemoryMarkdown",
+        "title": "OmniMemory: Sync Active Memory Markdown"
       },
       {
         "command": "omniMemory.openMemoryFolder",

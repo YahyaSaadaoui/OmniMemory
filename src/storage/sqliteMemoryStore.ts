@@ -8,6 +8,7 @@ import {
   CapturedConversation,
   MemoryCard,
   MemoryDraft,
+  MemoryCardUpdate,
   MemoryStatus,
   SearchResult,
   VerificationEvent,
@@ -173,6 +174,59 @@ export class SQLiteMemoryStore {
        SET status = ?, updated_at = ?
        WHERE id = ?`,
       [status, new Date().toISOString(), id]
+    );
+    await this.save();
+
+    return this.getMemoryCard(id);
+  }
+
+  async updateMemoryCardContent(id: string, update: MemoryCardUpdate): Promise<MemoryCard | undefined> {
+    const existing = this.getMemoryCard(id);
+    if (!existing) {
+      return undefined;
+    }
+
+    const quality = evaluateMemoryQuality({
+      ...update,
+      confidence: existing.confidence,
+      sourceCommitId: existing.sourceCommitId,
+      sourceConversationId: existing.sourceConversationId
+    });
+
+    this.database.run(
+      `UPDATE memory_cards
+       SET title = ?,
+           problem = ?,
+           symptoms = ?,
+           root_cause = ?,
+           attempts = ?,
+           solution = ?,
+           files_changed = ?,
+           related_pr = ?,
+           lessons = ?,
+           quality_score = ?,
+           quality_warnings = ?,
+           status = ?,
+           tags = ?,
+           updated_at = ?
+       WHERE id = ?`,
+      [
+        update.title,
+        update.problem,
+        update.symptoms,
+        update.rootCause,
+        update.attempts,
+        update.solution,
+        JSON.stringify(update.filesChanged),
+        update.relatedPr,
+        update.lessons,
+        quality.qualityScore,
+        JSON.stringify(quality.qualityWarnings),
+        update.status,
+        JSON.stringify(update.tags),
+        new Date().toISOString(),
+        id
+      ]
     );
     await this.save();
 

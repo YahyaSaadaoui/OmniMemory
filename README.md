@@ -24,6 +24,7 @@ For clean commit captures, OmniMemory checks whether that commit already has a m
 - `OmniMemory: Update Memory Status`
 - `OmniMemory: Verify Memory With Command`
 - `OmniMemory: Review Memory Queue`
+- `OmniMemory: Sync Active Memory Markdown`
 - `OmniMemory: Open Memory Folder`
 
 Search ranks local memories by title, tags, files changed, root cause, solution, problem, symptoms, lessons, and attempts.
@@ -31,6 +32,8 @@ Search ranks local memories by title, tags, files changed, root cause, solution,
 Verification can run a local workspace command, store the exit code and output as evidence, and mark the memory `Verified` when the command succeeds.
 
 The review queue surfaces Drafts and low-quality memories with warnings for missing root cause, solution, symptoms, attempts, lessons, files, tags, or overly generic titles.
+
+After editing a generated `.memory/*.md` card, run `OmniMemory: Sync Active Memory Markdown` to update the SQLite card and recompute quality warnings.
 
 ## Development
 

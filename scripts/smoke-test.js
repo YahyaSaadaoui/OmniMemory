@@ -3,7 +3,8 @@ const os = require('os');
 const path = require('path');
 const initSqlJs = require('sql.js');
 const { SQLiteMemoryStore } = require('../out/storage/sqliteMemoryStore');
-const { writeMemoryMarkdown } = require('../out/memory/markdown');
+const { renderMemoryCardMarkdown, writeMemoryMarkdown } = require('../out/memory/markdown');
+const { parseMemoryMarkdown } = require('../out/memory/markdownParser');
 const { synthesizeMemory } = require('../out/memory/synthesizer');
 
 async function main() {
@@ -85,6 +86,17 @@ async function main() {
   await store.insertCommit(weakCommit);
   const weakCard = await store.insertMemoryCard(synthesizeMemory(weakConversation, weakCommit));
   const reviewQueue = store.listReviewQueue();
+  const editedMarkdown = renderMemoryCardMarkdown(weakCard)
+    .replace('fix bug', 'Payment Callback Retry Regression')
+    .replace('Symptoms were not explicitly captured.', 'Callbacks were retried indefinitely after transient provider failures.')
+    .replace('Root cause was not explicit in the captured context.', 'Retry state was reset before callback reconciliation completed.')
+    .replace('Prior attempts were not explicitly captured.', 'Checked provider payloads, replayed callbacks, and ruled out queue delivery loss.')
+    .replace('Final solution was not explicit in the captured context.', 'Persisted retry state until callback reconciliation completed and added regression coverage.')
+    .replace('Capture explicit root cause, failed attempts, and verification evidence before promoting this memory beyond Draft.', 'Keep retry state transitions durable until external callback reconciliation is complete.')
+    .replace('## Files Changed\n\nN/A', '## Files Changed\n\n- src/payments/callback.ts')
+    .replace('## Tags\n\nN/A', '## Tags\n\n`payments` `typescript`');
+  const parsedMarkdown = parseMemoryMarkdown(editedMarkdown);
+  const syncedCard = await store.updateMemoryCardContent(parsedMarkdown.memoryId, parsedMarkdown.update);
 
   assert(card.rootCause === 'Schema compatibility mismatch between producer and consumer.', 'root cause was not synthesized');
   assert(card.qualityScore >= 70, 'complete memory was scored too low');
@@ -94,6 +106,8 @@ async function main() {
   assert(weakCard.qualityScore < 70, 'weak memory was not scored low');
   assert(weakCard.qualityWarnings.length > 0, 'weak memory has no quality warnings');
   assert(reviewQueue.some((result) => result.id === weakCard.id), 'review queue did not include weak memory');
+  assert(syncedCard && syncedCard.title === 'Payment Callback Retry Regression', 'Markdown sync did not update title');
+  assert(syncedCard && syncedCard.qualityScore > weakCard.qualityScore, 'Markdown sync did not recompute quality');
   assert(schemaResults.length === 1, 'schema search did not find the memory');
   assert(fileResults.length === 1, 'file search did not find the memory');
   assert(tagResults.length === 1, 'tag search did not find the memory');

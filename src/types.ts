@@ -62,6 +62,20 @@ export interface MemoryDraft {
   sourceConversationId: string | null;
 }
 
+export interface MemoryCardUpdate {
+  title: string;
+  problem: string;
+  symptoms: string;
+  rootCause: string;
+  attempts: string;
+  solution: string;
+  filesChanged: string[];
+  relatedPr: string | null;
+  lessons: string;
+  status: MemoryStatus;
+  tags: string[];
+}
+
 export interface SearchResult {
   id: string;
   title: string;

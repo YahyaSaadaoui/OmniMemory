@@ -4,6 +4,7 @@ import { getConfig, getWorkspaceRoot, resolveWorkspacePath } from './config';
 import { captureGitContext, getCurrentGitHead } from './git/gitCapture';
 import { createId } from './id';
 import { overwriteMemoryMarkdown, renderMemoryCardMarkdown, writeMemoryMarkdown } from './memory/markdown';
+import { parseMemoryMarkdown } from './memory/markdownParser';
 import { synthesizeMemory } from './memory/synthesizer';
 import { sanitizeEngineeringText } from './security/sanitizer';
 import { SQLiteMemoryStore } from './storage/sqliteMemoryStore';
@@ -20,6 +21,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('omniMemory.updateMemoryStatus', () => runCommand(context, updateMemoryStatus)),
     vscode.commands.registerCommand('omniMemory.verifyMemoryWithCommand', () => runCommand(context, verifyMemoryWithCommand)),
     vscode.commands.registerCommand('omniMemory.reviewMemoryQueue', () => runCommand(context, reviewMemoryQueue)),
+    vscode.commands.registerCommand('omniMemory.syncActiveMemoryMarkdown', () => runCommand(context, syncActiveMemoryMarkdown)),
     vscode.commands.registerCommand('omniMemory.openMemoryFolder', () => runCommand(context, openMemoryFolder))
   );
 
@@ -211,6 +213,46 @@ async function reviewMemoryQueue(context: vscode.ExtensionContext): Promise<void
   }
 
   await openMemory(context, picked.id);
+}
+
+async function syncActiveMemoryMarkdown(context: vscode.ExtensionContext): Promise<void> {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    await vscode.window.showWarningMessage('Open an OmniMemory Markdown card before syncing.');
+    return;
+  }
+
+  if (editor.document.uri.scheme === 'file' && editor.document.isDirty) {
+    const saved = await editor.document.save();
+    if (!saved) {
+      await vscode.window.showWarningMessage('Save the active Markdown card before syncing it.');
+      return;
+    }
+  }
+
+  const root = getWorkspaceRoot();
+  const db = await getStore(context);
+  const parsed = parseMemoryMarkdown(editor.document.getText());
+  const updated = await db.updateMemoryCardContent(parsed.memoryId, parsed.update);
+
+  if (!updated) {
+    await vscode.window.showWarningMessage('No OmniMemory card matched the active Markdown Memory ID.');
+    return;
+  }
+
+  let targetPath = updated.markdownPath ? path.resolve(root, updated.markdownPath) : undefined;
+
+  if (editor.document.uri.scheme === 'file') {
+    targetPath = editor.document.uri.fsPath;
+    await db.setMarkdownPath(updated.id, path.relative(root, targetPath));
+  }
+
+  const savedCard = db.getMemoryCard(updated.id) ?? updated;
+  if (targetPath) {
+    await overwriteMemoryMarkdown(targetPath, savedCard);
+  }
+
+  await vscode.window.showInformationMessage(`OmniMemory synced "${savedCard.title}".`);
 }
 
 async function verifyMemoryWithCommand(context: vscode.ExtensionContext): Promise<void> {
