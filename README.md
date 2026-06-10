@@ -20,9 +20,12 @@ When commit detection is enabled, OmniMemory watches the current Git `HEAD` and 
 - `OmniMemory: Generate Memory From Git Context`
 - `OmniMemory: Search Memories`
 - `OmniMemory: Update Memory Status`
+- `OmniMemory: Verify Memory With Command`
 - `OmniMemory: Open Memory Folder`
 
 Search ranks local memories by title, tags, files changed, root cause, solution, problem, symptoms, lessons, and attempts.
+
+Verification can run a local workspace command, store the exit code and output as evidence, and mark the memory `Verified` when the command succeeds.
 
 ## Development
 
@@ -48,3 +51,5 @@ The database path and memory directory can be changed in VS Code settings.
 - `omniMemory.maxDiffCharacters`
 - `omniMemory.enableCommitDetection`
 - `omniMemory.commitDetectionIntervalSeconds`
+- `omniMemory.verificationCommand`
+- `omniMemory.maxVerificationOutputCharacters`

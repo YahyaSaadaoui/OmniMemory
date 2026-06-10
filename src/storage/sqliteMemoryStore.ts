@@ -2,7 +2,16 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import initSqlJs, { Database } from 'sql.js';
 import { createId } from '../id';
-import { CapturedCommit, CapturedConversation, MemoryCard, MemoryDraft, MemoryStatus, SearchResult } from '../types';
+import {
+  CapturedCommit,
+  CapturedConversation,
+  MemoryCard,
+  MemoryDraft,
+  MemoryStatus,
+  SearchResult,
+  VerificationEvent,
+  VerificationEventDraft
+} from '../types';
 
 type Row = Record<string, unknown>;
 
@@ -88,7 +97,8 @@ export class SQLiteMemoryStore {
       ...draft,
       createdAt: now,
       updatedAt: now,
-      markdownPath: null
+      markdownPath: null,
+      verificationEvents: []
     };
 
     this.database.run(
@@ -160,6 +170,31 @@ export class SQLiteMemoryStore {
     return this.getMemoryCard(id);
   }
 
+  async addVerificationEvent(draft: VerificationEventDraft): Promise<VerificationEvent> {
+    const event: VerificationEvent = {
+      id: createId('verification'),
+      createdAt: new Date().toISOString(),
+      ...draft
+    };
+
+    this.database.run(
+      `INSERT INTO verification_events (id, memory_id, kind, command, exit_code, output, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        event.id,
+        event.memoryId,
+        event.kind,
+        event.command,
+        event.exitCode,
+        event.output,
+        event.createdAt
+      ]
+    );
+    await this.save();
+
+    return event;
+  }
+
   getMemoryCard(id: string): MemoryCard | undefined {
     const statement = this.database.prepare(
       `SELECT *
@@ -173,10 +208,35 @@ export class SQLiteMemoryStore {
         return undefined;
       }
 
-      return rowToMemoryCard(statement.getAsObject() as Row);
+      const card = rowToMemoryCard(statement.getAsObject() as Row);
+      return {
+        ...card,
+        verificationEvents: this.listVerificationEvents(card.id)
+      };
     } finally {
       statement.free();
     }
+  }
+
+  listVerificationEvents(memoryId: string): VerificationEvent[] {
+    const statement = this.database.prepare(
+      `SELECT *
+       FROM verification_events
+       WHERE memory_id = ?
+       ORDER BY created_at DESC`
+    );
+    const results: VerificationEvent[] = [];
+
+    try {
+      statement.bind([memoryId]);
+      while (statement.step()) {
+        results.push(rowToVerificationEvent(statement.getAsObject() as Row));
+      }
+    } finally {
+      statement.free();
+    }
+
+    return results;
   }
 
   searchMemories(query: string, limit = 20): SearchResult[] {
@@ -326,9 +386,21 @@ export class SQLiteMemoryStore {
         FOREIGN KEY(memory_id) REFERENCES memory_cards(id)
       );
 
+      CREATE TABLE IF NOT EXISTS verification_events (
+        id TEXT PRIMARY KEY,
+        memory_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        command TEXT NOT NULL,
+        exit_code INTEGER NOT NULL,
+        output TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(memory_id) REFERENCES memory_cards(id)
+      );
+
       CREATE INDEX IF NOT EXISTS idx_memory_cards_status ON memory_cards(status);
       CREATE INDEX IF NOT EXISTS idx_memory_cards_created_at ON memory_cards(created_at);
       CREATE INDEX IF NOT EXISTS idx_memory_cards_title ON memory_cards(title);
+      CREATE INDEX IF NOT EXISTS idx_verification_events_memory_id ON verification_events(memory_id);
     `);
   }
 
@@ -357,7 +429,8 @@ function rowToMemoryCard(row: Row): MemoryCard {
     updatedAt: asString(row.updated_at),
     sourceCommitId: nullableString(row.source_commit_id),
     sourceConversationId: nullableString(row.source_conversation_id),
-    markdownPath: nullableString(row.markdown_path)
+    markdownPath: nullableString(row.markdown_path),
+    verificationEvents: []
   };
 }
 
@@ -383,6 +456,18 @@ function rowToSearchableResult(row: Row): SearchableMemoryRow {
     lessons: asString(row.lessons),
     filesChanged: parseJsonArray(row.files_changed),
     tags: parseJsonArray(row.tags)
+  };
+}
+
+function rowToVerificationEvent(row: Row): VerificationEvent {
+  return {
+    id: asString(row.id),
+    memoryId: asString(row.memory_id),
+    kind: 'command',
+    command: asString(row.command),
+    exitCode: Number(row.exit_code),
+    output: asString(row.output),
+    createdAt: asString(row.created_at)
   };
 }
 

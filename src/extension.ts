@@ -8,6 +8,7 @@ import { synthesizeMemory } from './memory/synthesizer';
 import { sanitizeEngineeringText } from './security/sanitizer';
 import { SQLiteMemoryStore } from './storage/sqliteMemoryStore';
 import { CapturedConversation, MemoryStatus, SearchResult } from './types';
+import { runVerificationCommand } from './verification/commandVerifier';
 
 let store: SQLiteMemoryStore | undefined;
 
@@ -17,6 +18,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('omniMemory.generateFromGitContext', () => runCommand(context, generateFromGitContext)),
     vscode.commands.registerCommand('omniMemory.searchMemories', () => runCommand(context, searchMemories)),
     vscode.commands.registerCommand('omniMemory.updateMemoryStatus', () => runCommand(context, updateMemoryStatus)),
+    vscode.commands.registerCommand('omniMemory.verifyMemoryWithCommand', () => runCommand(context, verifyMemoryWithCommand)),
     vscode.commands.registerCommand('omniMemory.openMemoryFolder', () => runCommand(context, openMemoryFolder))
   );
 
@@ -187,6 +189,76 @@ async function updateMemoryStatus(context: vscode.ExtensionContext): Promise<voi
   }
 
   await vscode.window.showInformationMessage(`OmniMemory marked "${updated.title}" as ${status}.`);
+}
+
+async function verifyMemoryWithCommand(context: vscode.ExtensionContext): Promise<void> {
+  const root = getWorkspaceRoot();
+  const config = getConfig();
+  const db = await getStore(context);
+  const results = db.listRecentMemories();
+
+  if (results.length === 0) {
+    await vscode.window.showInformationMessage('No OmniMemory cards exist yet.');
+    return;
+  }
+
+  const picked = await pickMemory(results, 'Choose a memory card to verify');
+  if (!picked) {
+    return;
+  }
+
+  const command = await vscode.window.showInputBox({
+    title: 'Verify OmniMemory',
+    prompt: 'Run a local command and attach the result as verification evidence.',
+    value: config.verificationCommand,
+    ignoreFocusOut: true
+  });
+
+  if (!command?.trim()) {
+    return;
+  }
+
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: 'OmniMemory is verifying memory evidence',
+      cancellable: false
+    },
+    async (progress) => {
+      progress.report({ message: command });
+
+      const result = await runVerificationCommand(command, root, config.maxVerificationOutputCharacters);
+      await db.addVerificationEvent({
+        memoryId: picked.id,
+        kind: 'command',
+        command,
+        exitCode: result.exitCode,
+        output: result.output
+      });
+
+      const updated = result.exitCode === 0
+        ? await db.updateStatus(picked.id, 'Verified')
+        : db.getMemoryCard(picked.id);
+
+      if (!updated) {
+        await vscode.window.showWarningMessage('That memory card no longer exists.');
+        return;
+      }
+
+      if (updated.markdownPath) {
+        await overwriteMemoryMarkdown(path.resolve(root, updated.markdownPath), updated);
+      }
+
+      const message = result.exitCode === 0
+        ? `OmniMemory verified "${updated.title}".`
+        : `OmniMemory recorded failed verification for "${updated.title}".`;
+      const action = await vscode.window.showInformationMessage(message, 'Open Memory Card');
+
+      if (action === 'Open Memory Card') {
+        await openMemory(context, updated.id);
+      }
+    }
+  );
 }
 
 async function openMemoryFolder(context: vscode.ExtensionContext): Promise<void> {

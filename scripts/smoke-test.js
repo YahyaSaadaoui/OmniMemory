@@ -47,12 +47,23 @@ async function main() {
   const card = await store.insertMemoryCard(synthesizeMemory(conversation, commit));
   const markdownPath = await writeMemoryMarkdown(memoryDir, card);
   await store.setMarkdownPath(card.id, path.relative(tempRoot, markdownPath));
+  await store.addVerificationEvent({
+    memoryId: card.id,
+    kind: 'command',
+    command: 'npm test',
+    exitCode: 0,
+    output: 'tests passed'
+  });
+  const verified = await store.updateStatus(card.id, 'Verified');
 
   const schemaResults = store.searchMemories('schema mismatch');
   const fileResults = store.searchMemories('consumer.ts');
   const tagResults = store.searchMemories('kafka');
+  const verificationEvents = store.listVerificationEvents(card.id);
 
   assert(card.rootCause === 'Schema compatibility mismatch between producer and consumer.', 'root cause was not synthesized');
+  assert(verified && verified.status === 'Verified', 'memory was not marked verified');
+  assert(verificationEvents.length === 1, 'verification event was not stored');
   assert(schemaResults.length === 1, 'schema search did not find the memory');
   assert(fileResults.length === 1, 'file search did not find the memory');
   assert(tagResults.length === 1, 'tag search did not find the memory');

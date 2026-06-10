@@ -17,6 +17,7 @@
     "onCommand:omniMemory.generateFromGitContext",
     "onCommand:omniMemory.searchMemories",
     "onCommand:omniMemory.updateMemoryStatus",
+    "onCommand:omniMemory.verifyMemoryWithCommand",
     "onCommand:omniMemory.openMemoryFolder"
   ],
   "main": "./out/extension.js",
@@ -57,6 +58,18 @@
           "minimum": 5,
           "maximum": 300,
           "description": "Polling interval used to detect new Git commits."
+        },
+        "omniMemory.verificationCommand": {
+          "type": "string",
+          "default": "npm test",
+          "description": "Default local command used by OmniMemory verification."
+        },
+        "omniMemory.maxVerificationOutputCharacters": {
+          "type": "number",
+          "default": 8000,
+          "minimum": 1000,
+          "maximum": 50000,
+          "description": "Maximum command output characters stored as verification evidence."
         }
       }
     },
@@ -76,6 +89,10 @@
       {
         "command": "omniMemory.updateMemoryStatus",
         "title": "OmniMemory: Update Memory Status"
+      },
+      {
+        "command": "omniMemory.verifyMemoryWithCommand",
+        "title": "OmniMemory: Verify Memory With Command"
       },
       {
         "command": "omniMemory.openMemoryFolder",

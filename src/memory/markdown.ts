@@ -59,6 +59,10 @@ ${card.lessons}
 
 ${formatInlineTags(card.tags)}
 
+## Verification
+
+${formatVerification(card)}
+
 ## Source
 
 - Memory ID: ${card.id}
@@ -81,4 +85,25 @@ function formatInlineTags(tags: string[]): string {
   }
 
   return tags.map((tag) => `\`${tag}\``).join(' ');
+}
+
+function formatVerification(card: MemoryCard): string {
+  if (card.verificationEvents.length === 0) {
+    return 'No verification evidence recorded yet.';
+  }
+
+  return card.verificationEvents
+    .map((event) => {
+      const status = event.exitCode === 0 ? 'Passed' : 'Failed';
+      const output = event.output.trim()
+        ? `\n\n\`\`\`text\n${event.output.trim()}\n\`\`\``
+        : '';
+
+      return `### ${status}: ${event.command}
+
+- Type: ${event.kind}
+- Exit Code: ${event.exitCode}
+- Recorded: ${event.createdAt}${output}`;
+    })
+    .join('\n\n');
 }

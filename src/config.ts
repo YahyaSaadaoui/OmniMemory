@@ -8,6 +8,8 @@ export interface OmniMemoryConfig {
   maxDiffCharacters: number;
   enableCommitDetection: boolean;
   commitDetectionIntervalSeconds: number;
+  verificationCommand: string;
+  maxVerificationOutputCharacters: number;
 }
 
 export function getConfig(): OmniMemoryConfig {
@@ -19,7 +21,9 @@ export function getConfig(): OmniMemoryConfig {
     defaultConversationTool: config.get<string>('defaultConversationTool', 'manual'),
     maxDiffCharacters: config.get<number>('maxDiffCharacters', 60000),
     enableCommitDetection: config.get<boolean>('enableCommitDetection', true),
-    commitDetectionIntervalSeconds: config.get<number>('commitDetectionIntervalSeconds', 20)
+    commitDetectionIntervalSeconds: config.get<number>('commitDetectionIntervalSeconds', 20),
+    verificationCommand: config.get<string>('verificationCommand', 'npm test'),
+    maxVerificationOutputCharacters: config.get<number>('maxVerificationOutputCharacters', 8000)
   };
 }
 

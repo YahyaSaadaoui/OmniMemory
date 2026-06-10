@@ -1,4 +1,5 @@
 export type MemoryStatus = 'Draft' | 'Verified' | 'Production Verified' | 'Deprecated';
+export type VerificationEventKind = 'command';
 
 export interface CapturedConversation {
   id: string;
@@ -38,6 +39,7 @@ export interface MemoryCard {
   sourceCommitId: string | null;
   sourceConversationId: string | null;
   markdownPath: string | null;
+  verificationEvents: VerificationEvent[];
 }
 
 export interface MemoryDraft {
@@ -69,4 +71,22 @@ export interface SearchResult {
   markdownPath: string | null;
   score?: number;
   matchedFields?: string[];
+}
+
+export interface VerificationEvent {
+  id: string;
+  memoryId: string;
+  kind: VerificationEventKind;
+  command: string;
+  exitCode: number;
+  output: string;
+  createdAt: string;
+}
+
+export interface VerificationEventDraft {
+  memoryId: string;
+  kind: VerificationEventKind;
+  command: string;
+  exitCode: number;
+  output: string;
 }
