@@ -1,0 +1,12 @@
+.git/**
+.github/**
+.vscode/**
+.vscode-test/**
+.memory/**
+.omnimemory/**
+src/**
+scripts/**
+out/**/*.map
+*.vsix
+tsconfig.json
+npm-debug.log*

@@ -56,9 +56,16 @@ After editing a generated `.memory/*.md` card, run `OmniMemory: Sync Active Memo
 ```bash
 npm install
 npm test
+npm run package:vsix
 ```
 
 Then press `F5` in VS Code to launch an Extension Development Host.
+
+Install the generated VSIX locally with:
+
+```bash
+code --install-extension omnimemory-0.1.0.vsix
+```
 
 ## Local-First Storage
 
