@@ -21,6 +21,7 @@ For clean commit captures, OmniMemory checks whether that commit already has a m
 - `OmniMemory: Generate Memory From Current Context`
 - `OmniMemory: Generate Memory From Git Context`
 - `OmniMemory: Search Memories`
+- `OmniMemory: Find Similar Memories From Context`
 - `OmniMemory: Update Memory Status`
 - `OmniMemory: Verify Memory With Command`
 - `OmniMemory: Review Memory Queue`
@@ -28,6 +29,8 @@ For clean commit captures, OmniMemory checks whether that commit already has a m
 - `OmniMemory: Open Memory Folder`
 
 Search ranks local memories by title, tags, files changed, root cause, solution, problem, symptoms, lessons, and attempts.
+
+Context search uses the active selection, nearby diagnostics, current line, surrounding code, and file name to answer whether a similar issue has already been captured.
 
 Verification can run a local workspace command, store the exit code and output as evidence, and mark the memory `Verified` when the command succeeds.
 

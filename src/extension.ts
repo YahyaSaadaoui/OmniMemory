@@ -9,6 +9,7 @@ import { synthesizeMemory } from './memory/synthesizer';
 import { sanitizeEngineeringText } from './security/sanitizer';
 import { SQLiteMemoryStore } from './storage/sqliteMemoryStore';
 import { CapturedConversation, MemoryStatus, SearchResult } from './types';
+import { buildRetrievalQuery } from './retrieval/contextQuery';
 import { runVerificationCommand } from './verification/commandVerifier';
 
 let store: SQLiteMemoryStore | undefined;
@@ -18,6 +19,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('omniMemory.generateFromCurrentContext', () => runCommand(context, generateFromCurrentContext)),
     vscode.commands.registerCommand('omniMemory.generateFromGitContext', () => runCommand(context, generateFromGitContext)),
     vscode.commands.registerCommand('omniMemory.searchMemories', () => runCommand(context, searchMemories)),
+    vscode.commands.registerCommand('omniMemory.findSimilarFromContext', () => runCommand(context, findSimilarFromContext)),
     vscode.commands.registerCommand('omniMemory.updateMemoryStatus', () => runCommand(context, updateMemoryStatus)),
     vscode.commands.registerCommand('omniMemory.verifyMemoryWithCommand', () => runCommand(context, verifyMemoryWithCommand)),
     vscode.commands.registerCommand('omniMemory.reviewMemoryQueue', () => runCommand(context, reviewMemoryQueue)),
@@ -147,6 +149,37 @@ async function searchMemories(context: vscode.ExtensionContext): Promise<void> {
   }
 
   const picked = await pickMemory(results, 'Open a memory card');
+  if (!picked) {
+    return;
+  }
+
+  await openMemory(context, picked.id);
+}
+
+async function findSimilarFromContext(context: vscode.ExtensionContext): Promise<void> {
+  const query = buildQueryFromActiveEditor();
+
+  if (!query) {
+    await vscode.window.showWarningMessage('Select an error, log, stack trace, or code path before searching OmniMemory.');
+    return;
+  }
+
+  const db = await getStore(context);
+  const results = db.searchMemories(query, 10);
+
+  if (results.length === 0) {
+    const action = await vscode.window.showInformationMessage(
+      'No similar OmniMemory cards matched the active context.',
+      'Generate Memory'
+    );
+
+    if (action === 'Generate Memory') {
+      await generateFromCurrentContext(context);
+    }
+    return;
+  }
+
+  const picked = await pickMemory(results, 'Similar OmniMemory cards');
   if (!picked) {
     return;
   }
@@ -475,6 +508,34 @@ function readActiveEditorText(): string {
   }
 
   return editor.document.getText();
+}
+
+function buildQueryFromActiveEditor(): string {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    return '';
+  }
+
+  const document = editor.document;
+  const selection = editor.selection;
+  const selectedText = selection.isEmpty ? '' : document.getText(selection);
+  const currentLine = document.lineAt(selection.active.line).text;
+  const startLine = Math.max(0, selection.active.line - 3);
+  const endLine = Math.min(document.lineCount - 1, selection.active.line + 3);
+  const surroundingText = document.getText(new vscode.Range(startLine, 0, endLine, document.lineAt(endLine).text.length));
+  const diagnosticMessages = vscode.languages
+    .getDiagnostics(document.uri)
+    .filter((diagnostic) => diagnostic.range.intersection(selection) || diagnostic.range.start.line === selection.active.line)
+    .slice(0, 5)
+    .map((diagnostic) => diagnostic.message);
+
+  return buildRetrievalQuery({
+    selectedText,
+    diagnosticMessages,
+    currentLine,
+    surroundingText,
+    fileName: path.basename(document.fileName)
+  });
 }
 
 async function askForConversationFallback(): Promise<string | undefined> {

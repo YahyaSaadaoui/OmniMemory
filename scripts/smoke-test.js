@@ -6,6 +6,7 @@ const { SQLiteMemoryStore } = require('../out/storage/sqliteMemoryStore');
 const { renderMemoryCardMarkdown, writeMemoryMarkdown } = require('../out/memory/markdown');
 const { parseMemoryMarkdown } = require('../out/memory/markdownParser');
 const { synthesizeMemory } = require('../out/memory/synthesizer');
+const { buildRetrievalQuery } = require('../out/retrieval/contextQuery');
 
 async function main() {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omnimemory-smoke-'));
@@ -97,6 +98,14 @@ async function main() {
     .replace('## Tags\n\nN/A', '## Tags\n\n`payments` `typescript`');
   const parsedMarkdown = parseMemoryMarkdown(editedMarkdown);
   const syncedCard = await store.updateMemoryCardContent(parsedMarkdown.memoryId, parsedMarkdown.update);
+  const contextQuery = buildRetrievalQuery({
+    selectedText: 'Null provider response caused payment callback retries to loop.',
+    diagnosticMessages: ['TypeError: Cannot read properties of null'],
+    currentLine: 'validatePaymentProviderResponse(response)',
+    surroundingText: 'payment callback reconciliation failed after provider timeout',
+    fileName: 'callback.ts'
+  });
+  const contextResults = store.searchMemories(contextQuery);
 
   assert(card.rootCause === 'Schema compatibility mismatch between producer and consumer.', 'root cause was not synthesized');
   assert(card.qualityScore >= 70, 'complete memory was scored too low');
@@ -108,6 +117,8 @@ async function main() {
   assert(reviewQueue.some((result) => result.id === weakCard.id), 'review queue did not include weak memory');
   assert(syncedCard && syncedCard.title === 'Payment Callback Retry Regression', 'Markdown sync did not update title');
   assert(syncedCard && syncedCard.qualityScore > weakCard.qualityScore, 'Markdown sync did not recompute quality');
+  assert(contextQuery.includes('Null provider response'), 'context query did not include selected text');
+  assert(contextResults.some((result) => result.id === weakCard.id), 'context search did not find synced memory');
   assert(schemaResults.length === 1, 'schema search did not find the memory');
   assert(fileResults.length === 1, 'file search did not find the memory');
   assert(tagResults.length === 1, 'tag search did not find the memory');

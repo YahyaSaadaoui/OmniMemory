@@ -16,6 +16,7 @@
     "onCommand:omniMemory.generateFromCurrentContext",
     "onCommand:omniMemory.generateFromGitContext",
     "onCommand:omniMemory.searchMemories",
+    "onCommand:omniMemory.findSimilarFromContext",
     "onCommand:omniMemory.updateMemoryStatus",
     "onCommand:omniMemory.verifyMemoryWithCommand",
     "onCommand:omniMemory.reviewMemoryQueue",
@@ -87,6 +88,10 @@
       {
         "command": "omniMemory.searchMemories",
         "title": "OmniMemory: Search Memories"
+      },
+      {
+        "command": "omniMemory.findSimilarFromContext",
+        "title": "OmniMemory: Find Similar Memories From Context"
       },
       {
         "command": "omniMemory.updateMemoryStatus",
