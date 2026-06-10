@@ -19,6 +19,15 @@ async function runGit(args: string[], cwd: string): Promise<string | null> {
   }
 }
 
+export async function getCurrentGitHead(workspaceRoot: string): Promise<string | null> {
+  const gitRoot = await runGit(['rev-parse', '--show-toplevel'], workspaceRoot);
+  if (!gitRoot) {
+    return null;
+  }
+
+  return runGit(['rev-parse', 'HEAD'], gitRoot);
+}
+
 function splitLines(value: string | null): string[] {
   if (!value) {
     return [];

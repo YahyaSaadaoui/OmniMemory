@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { getConfig, getWorkspaceRoot, resolveWorkspacePath } from './config';
-import { captureGitContext } from './git/gitCapture';
+import { captureGitContext, getCurrentGitHead } from './git/gitCapture';
 import { createId } from './id';
 import { overwriteMemoryMarkdown, renderMemoryCardMarkdown, writeMemoryMarkdown } from './memory/markdown';
 import { synthesizeMemory } from './memory/synthesizer';
@@ -14,10 +14,13 @@ let store: SQLiteMemoryStore | undefined;
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   context.subscriptions.push(
     vscode.commands.registerCommand('omniMemory.generateFromCurrentContext', () => runCommand(context, generateFromCurrentContext)),
+    vscode.commands.registerCommand('omniMemory.generateFromGitContext', () => runCommand(context, generateFromGitContext)),
     vscode.commands.registerCommand('omniMemory.searchMemories', () => runCommand(context, searchMemories)),
     vscode.commands.registerCommand('omniMemory.updateMemoryStatus', () => runCommand(context, updateMemoryStatus)),
     vscode.commands.registerCommand('omniMemory.openMemoryFolder', () => runCommand(context, openMemoryFolder))
   );
+
+  startCommitDetection(context);
 }
 
 export function deactivate(): void {
@@ -37,19 +40,38 @@ async function runCommand(
 }
 
 async function generateFromCurrentContext(context: vscode.ExtensionContext): Promise<void> {
-  const root = getWorkspaceRoot();
-  const config = getConfig();
   const activeText = readActiveEditorText();
+  const conversationText = activeText.trim()
+    ? activeText
+    : await askForConversationFallback();
 
-  if (!activeText.trim()) {
-    await vscode.window.showWarningMessage('Open an editor with conversation text, debugging notes, or selected reasoning before generating a memory.');
+  if (conversationText === undefined) {
     return;
   }
+
+  await generateMemory(context, conversationText, 'OmniMemory is generating an engineering memory');
+}
+
+async function generateFromGitContext(context: vscode.ExtensionContext): Promise<void> {
+  await generateMemory(
+    context,
+    'No conversation text was captured. Synthesize this memory from Git context only.',
+    'OmniMemory is generating a memory from Git context'
+  );
+}
+
+async function generateMemory(
+  context: vscode.ExtensionContext,
+  rawConversationText: string,
+  progressTitle: string
+): Promise<void> {
+  const root = getWorkspaceRoot();
+  const config = getConfig();
 
   await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
-      title: 'OmniMemory is generating an engineering memory',
+      title: progressTitle,
       cancellable: false
     },
     async (progress) => {
@@ -58,7 +80,7 @@ async function generateFromCurrentContext(context: vscode.ExtensionContext): Pro
       const conversation: CapturedConversation = {
         id: createId('conversation'),
         tool: config.defaultConversationTool,
-        content: sanitizeEngineeringText(activeText),
+        content: sanitizeEngineeringText(rawConversationText.trim() || 'No conversation text was captured.'),
         timestamp: new Date().toISOString()
       };
       const capturedCommit = await captureGitContext(root, config.maxDiffCharacters);
@@ -176,6 +198,62 @@ async function openMemoryFolder(context: vscode.ExtensionContext): Promise<void>
   await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(memoryDirectory));
 }
 
+function startCommitDetection(context: vscode.ExtensionContext): void {
+  const config = getConfig();
+  if (!config.enableCommitDetection || !vscode.workspace.workspaceFolders?.length) {
+    return;
+  }
+
+  let lastSeenHead: string | null | undefined;
+  let promptInFlight = false;
+
+  const checkHead = async () => {
+    const root = getWorkspaceRoot();
+    const currentHead = await getCurrentGitHead(root);
+
+    if (!currentHead) {
+      lastSeenHead = null;
+      return;
+    }
+
+    if (lastSeenHead === undefined) {
+      lastSeenHead = currentHead;
+      return;
+    }
+
+    if (lastSeenHead === currentHead || promptInFlight) {
+      return;
+    }
+
+    lastSeenHead = currentHead;
+    promptInFlight = true;
+    try {
+      const action = await vscode.window.showInformationMessage(
+        'OmniMemory detected a new Git commit.',
+        'Generate Memory',
+        'Ignore'
+      );
+
+      if (action === 'Generate Memory') {
+        await generateFromCurrentContext(context);
+      }
+    } finally {
+      promptInFlight = false;
+    }
+  };
+
+  checkHead().catch(() => undefined);
+
+  const intervalMs = Math.max(5, config.commitDetectionIntervalSeconds) * 1000;
+  const timer = setInterval(() => {
+    checkHead().catch(() => undefined);
+  }, intervalMs);
+
+  context.subscriptions.push({
+    dispose: () => clearInterval(timer)
+  });
+}
+
 async function openMemory(context: vscode.ExtensionContext, id: string): Promise<void> {
   const root = getWorkspaceRoot();
   const db = await getStore(context);
@@ -230,11 +308,27 @@ function readActiveEditorText(): string {
   return editor.document.getText();
 }
 
+async function askForConversationFallback(): Promise<string | undefined> {
+  const note = await vscode.window.showInputBox({
+    title: 'Capture OmniMemory Context',
+    prompt: 'Add a short problem, root cause, or fix note. Leave empty to use Git context only.',
+    ignoreFocusOut: true
+  });
+
+  if (note === undefined) {
+    return undefined;
+  }
+
+  return note.trim() || 'No conversation text was captured. Synthesize this memory from Git context only.';
+}
+
 async function pickMemory(results: SearchResult[], title: string): Promise<SearchResult | undefined> {
   const items = results.map((result) => ({
     label: result.title,
-    description: `${result.status} · ${Math.round(result.confidence * 100)}%`,
-    detail: result.problem,
+    description: formatSearchDescription(result),
+    detail: result.matchedFields?.length
+      ? `${result.problem} · Matched: ${result.matchedFields.join(', ')}`
+      : result.problem,
     result
   }));
   const picked = await vscode.window.showQuickPick(items, {
@@ -244,4 +338,17 @@ async function pickMemory(results: SearchResult[], title: string): Promise<Searc
   });
 
   return picked?.result;
+}
+
+function formatSearchDescription(result: SearchResult): string {
+  const parts = [
+    result.status,
+    `${Math.round(result.confidence * 100)}%`
+  ];
+
+  if (result.score !== undefined) {
+    parts.push(`score ${result.score}`);
+  }
+
+  return parts.join(' · ');
 }

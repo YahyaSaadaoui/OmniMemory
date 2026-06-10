@@ -6,6 +6,33 @@ import { CapturedCommit, CapturedConversation, MemoryCard, MemoryDraft, MemorySt
 
 type Row = Record<string, unknown>;
 
+interface SearchableMemoryRow extends SearchResult {
+  symptoms: string;
+  attempts: string;
+  lessons: string;
+  filesChanged: string[];
+  tags: string[];
+}
+
+const searchStopWords = new Set([
+  'the',
+  'and',
+  'for',
+  'with',
+  'that',
+  'this',
+  'from',
+  'into',
+  'why',
+  'are',
+  'was',
+  'were',
+  'does',
+  'did',
+  'how',
+  'what'
+]);
+
 export class SQLiteMemoryStore {
   private db: Database | undefined;
 
@@ -153,34 +180,55 @@ export class SQLiteMemoryStore {
   }
 
   searchMemories(query: string, limit = 20): SearchResult[] {
+    const tokens = tokenizeQuery(query);
+    if (tokens.length === 0) {
+      return this.listRecentMemories(limit);
+    }
+
     const statement = this.database.prepare(
-      `SELECT id, title, problem, root_cause, solution, status, confidence, created_at, markdown_path
+      `SELECT id, title, problem, symptoms, root_cause, attempts, solution, files_changed, lessons, tags, status, confidence, created_at, markdown_path
        FROM memory_cards
-       WHERE lower(title) LIKE ?
-          OR lower(problem) LIKE ?
-          OR lower(symptoms) LIKE ?
-          OR lower(root_cause) LIKE ?
-          OR lower(attempts) LIKE ?
-          OR lower(solution) LIKE ?
-          OR lower(lessons) LIKE ?
-          OR lower(tags) LIKE ?
        ORDER BY created_at DESC
-       LIMIT ?`
+       LIMIT 1000`
     );
 
-    const needle = `%${query.toLowerCase()}%`;
-    const results: SearchResult[] = [];
+    const rows: SearchableMemoryRow[] = [];
 
     try {
-      statement.bind([needle, needle, needle, needle, needle, needle, needle, needle, limit]);
       while (statement.step()) {
-        results.push(rowToSearchResult(statement.getAsObject() as Row));
+        rows.push(rowToSearchableResult(statement.getAsObject() as Row));
       }
     } finally {
       statement.free();
     }
 
-    return results;
+    return rows
+      .map((row) => {
+        const score = scoreSearchRow(query, tokens, row);
+        return { row, score };
+      })
+      .filter((result) => result.score.score > 0)
+      .sort((a, b) => {
+        if (b.score.score !== a.score.score) {
+          return b.score.score - a.score.score;
+        }
+
+        return b.row.createdAt.localeCompare(a.row.createdAt);
+      })
+      .slice(0, limit)
+      .map(({ row, score }) => ({
+        id: row.id,
+        title: row.title,
+        problem: row.problem,
+        rootCause: row.rootCause,
+        solution: row.solution,
+        status: row.status,
+        confidence: row.confidence,
+        createdAt: row.createdAt,
+        markdownPath: row.markdownPath,
+        score: score.score,
+        matchedFields: score.matchedFields
+      }));
   }
 
   listRecentMemories(limit = 50): SearchResult[] {
@@ -324,6 +372,79 @@ function rowToSearchResult(row: Row): SearchResult {
     confidence: Number(row.confidence),
     createdAt: asString(row.created_at),
     markdownPath: nullableString(row.markdown_path)
+  };
+}
+
+function rowToSearchableResult(row: Row): SearchableMemoryRow {
+  return {
+    ...rowToSearchResult(row),
+    symptoms: asString(row.symptoms),
+    attempts: asString(row.attempts),
+    lessons: asString(row.lessons),
+    filesChanged: parseJsonArray(row.files_changed),
+    tags: parseJsonArray(row.tags)
+  };
+}
+
+function tokenizeQuery(query: string): string[] {
+  const tokens = query
+    .toLowerCase()
+    .split(/[^a-z0-9_./-]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2 && !searchStopWords.has(token));
+
+  return [...new Set(tokens)];
+}
+
+function scoreSearchRow(
+  query: string,
+  tokens: string[],
+  row: SearchableMemoryRow
+): { score: number; matchedFields: string[] } {
+  const fields = [
+    { name: 'title', value: row.title, weight: 10 },
+    { name: 'tags', value: row.tags.join(' '), weight: 9 },
+    { name: 'files', value: row.filesChanged.join(' '), weight: 8 },
+    { name: 'root cause', value: row.rootCause, weight: 7 },
+    { name: 'solution', value: row.solution, weight: 6 },
+    { name: 'problem', value: row.problem, weight: 5 },
+    { name: 'symptoms', value: row.symptoms, weight: 4 },
+    { name: 'lessons', value: row.lessons, weight: 3 },
+    { name: 'attempts', value: row.attempts, weight: 2 }
+  ];
+  const phrase = query.toLowerCase().trim();
+  const matchedFields = new Set<string>();
+  let score = 0;
+
+  for (const field of fields) {
+    const lower = field.value.toLowerCase();
+    if (!lower) {
+      continue;
+    }
+
+    if (phrase.length >= 3 && lower.includes(phrase)) {
+      score += field.weight * 4;
+      matchedFields.add(field.name);
+    }
+
+    for (const token of tokens) {
+      if (lower.includes(token)) {
+        score += field.weight;
+        matchedFields.add(field.name);
+      }
+    }
+  }
+
+  for (const tag of row.tags) {
+    if (tokens.includes(tag.toLowerCase())) {
+      score += 12;
+      matchedFields.add('tags');
+    }
+  }
+
+  return {
+    score,
+    matchedFields: [...matchedFields]
   };
 }
 

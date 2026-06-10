@@ -12,7 +12,9 @@
     "Other"
   ],
   "activationEvents": [
+    "onStartupFinished",
     "onCommand:omniMemory.generateFromCurrentContext",
+    "onCommand:omniMemory.generateFromGitContext",
     "onCommand:omniMemory.searchMemories",
     "onCommand:omniMemory.updateMemoryStatus",
     "onCommand:omniMemory.openMemoryFolder"
@@ -43,6 +45,18 @@
           "minimum": 5000,
           "maximum": 500000,
           "description": "Maximum number of Git diff characters included in memory synthesis."
+        },
+        "omniMemory.enableCommitDetection": {
+          "type": "boolean",
+          "default": true,
+          "description": "Prompt to generate an OmniMemory card when a new Git commit is detected."
+        },
+        "omniMemory.commitDetectionIntervalSeconds": {
+          "type": "number",
+          "default": 20,
+          "minimum": 5,
+          "maximum": 300,
+          "description": "Polling interval used to detect new Git commits."
         }
       }
     },
@@ -50,6 +64,10 @@
       {
         "command": "omniMemory.generateFromCurrentContext",
         "title": "OmniMemory: Generate Memory From Current Context"
+      },
+      {
+        "command": "omniMemory.generateFromGitContext",
+        "title": "OmniMemory: Generate Memory From Git Context"
       },
       {
         "command": "omniMemory.searchMemories",
@@ -67,6 +85,8 @@
   },
   "scripts": {
     "compile": "tsc -p ./",
+    "smoke": "node scripts/smoke-test.js",
+    "test": "npm run compile && npm run smoke",
     "watch": "tsc -watch -p ./",
     "vscode:prepublish": "npm run compile"
   },

@@ -67,4 +67,6 @@ export interface SearchResult {
   confidence: number;
   createdAt: string;
   markdownPath: string | null;
+  score?: number;
+  matchedFields?: string[];
 }
