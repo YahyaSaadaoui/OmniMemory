@@ -19,6 +19,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('omniMemory.searchMemories', () => runCommand(context, searchMemories)),
     vscode.commands.registerCommand('omniMemory.updateMemoryStatus', () => runCommand(context, updateMemoryStatus)),
     vscode.commands.registerCommand('omniMemory.verifyMemoryWithCommand', () => runCommand(context, verifyMemoryWithCommand)),
+    vscode.commands.registerCommand('omniMemory.reviewMemoryQueue', () => runCommand(context, reviewMemoryQueue)),
     vscode.commands.registerCommand('omniMemory.openMemoryFolder', () => runCommand(context, openMemoryFolder))
   );
 
@@ -193,6 +194,23 @@ async function updateMemoryStatus(context: vscode.ExtensionContext): Promise<voi
   }
 
   await vscode.window.showInformationMessage(`OmniMemory marked "${updated.title}" as ${status}.`);
+}
+
+async function reviewMemoryQueue(context: vscode.ExtensionContext): Promise<void> {
+  const db = await getStore(context);
+  const results = db.listReviewQueue();
+
+  if (results.length === 0) {
+    await vscode.window.showInformationMessage('No OmniMemory cards need review.');
+    return;
+  }
+
+  const picked = await pickMemory(results, 'Review low-confidence or Draft memories');
+  if (!picked) {
+    return;
+  }
+
+  await openMemory(context, picked.id);
 }
 
 async function verifyMemoryWithCommand(context: vscode.ExtensionContext): Promise<void> {
@@ -454,6 +472,10 @@ function formatSearchDescription(result: SearchResult): string {
     result.status,
     `${Math.round(result.confidence * 100)}%`
   ];
+
+  if (result.qualityScore !== undefined) {
+    parts.push(`quality ${result.qualityScore}`);
+  }
 
   if (result.score !== undefined) {
     parts.push(`score ${result.score}`);

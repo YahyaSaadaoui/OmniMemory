@@ -23,11 +23,14 @@ For clean commit captures, OmniMemory checks whether that commit already has a m
 - `OmniMemory: Search Memories`
 - `OmniMemory: Update Memory Status`
 - `OmniMemory: Verify Memory With Command`
+- `OmniMemory: Review Memory Queue`
 - `OmniMemory: Open Memory Folder`
 
 Search ranks local memories by title, tags, files changed, root cause, solution, problem, symptoms, lessons, and attempts.
 
 Verification can run a local workspace command, store the exit code and output as evidence, and mark the memory `Verified` when the command succeeds.
+
+The review queue surfaces Drafts and low-quality memories with warnings for missing root cause, solution, symptoms, attempts, lessons, files, tags, or overly generic titles.
 
 ## Development
 

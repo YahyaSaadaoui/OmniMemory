@@ -33,6 +33,8 @@ export interface MemoryCard {
   relatedPr: string | null;
   lessons: string;
   confidence: number;
+  qualityScore: number;
+  qualityWarnings: string[];
   status: MemoryStatus;
   tags: string[];
   createdAt: string;
@@ -70,6 +72,8 @@ export interface SearchResult {
   confidence: number;
   createdAt: string;
   markdownPath: string | null;
+  qualityScore?: number;
+  qualityWarnings?: string[];
   score?: number;
   matchedFields?: string[];
 }

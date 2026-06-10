@@ -23,6 +23,7 @@ export function renderMemoryCardMarkdown(card: MemoryCard): string {
 
 Status: ${card.status}
 Confidence: ${Math.round(card.confidence * 100)}%
+Quality: ${card.qualityScore}/100
 Created: ${card.createdAt}
 Updated: ${card.updatedAt}
 Related PR: ${card.relatedPr ?? 'N/A'}
@@ -62,6 +63,10 @@ ${formatInlineTags(card.tags)}
 ## Verification
 
 ${formatVerification(card)}
+
+## Quality Review
+
+${formatQualityReview(card)}
 
 ## Source
 
@@ -106,4 +111,12 @@ function formatVerification(card: MemoryCard): string {
 - Recorded: ${event.createdAt}${output}`;
     })
     .join('\n\n');
+}
+
+function formatQualityReview(card: MemoryCard): string {
+  if (card.qualityWarnings.length === 0) {
+    return 'No quality warnings.';
+  }
+
+  return card.qualityWarnings.map((warning) => `- ${warning}`).join('\n');
 }

@@ -2,6 +2,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import initSqlJs, { Database } from 'sql.js';
 import { createId } from '../id';
+import { evaluateMemoryQuality } from '../memory/quality';
 import {
   CapturedCommit,
   CapturedConversation,
@@ -93,9 +94,12 @@ export class SQLiteMemoryStore {
 
   async insertMemoryCard(draft: MemoryDraft): Promise<MemoryCard> {
     const now = new Date().toISOString();
+    const quality = evaluateMemoryQuality(draft);
     const card: MemoryCard = {
       id: createId('memory'),
       ...draft,
+      qualityScore: quality.qualityScore,
+      qualityWarnings: quality.qualityWarnings,
       createdAt: now,
       updatedAt: now,
       markdownPath: null,
@@ -115,6 +119,8 @@ export class SQLiteMemoryStore {
         related_pr,
         lessons,
         confidence,
+        quality_score,
+        quality_warnings,
         status,
         tags,
         created_at,
@@ -122,7 +128,7 @@ export class SQLiteMemoryStore {
         source_commit_id,
         source_conversation_id,
         markdown_path
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         card.id,
         card.title,
@@ -135,6 +141,8 @@ export class SQLiteMemoryStore {
         card.relatedPr,
         card.lessons,
         card.confidence,
+        card.qualityScore,
+        JSON.stringify(card.qualityWarnings),
         card.status,
         JSON.stringify(card.tags),
         card.createdAt,
@@ -336,6 +344,31 @@ export class SQLiteMemoryStore {
     return results;
   }
 
+  listReviewQueue(limit = 50): SearchResult[] {
+    const statement = this.database.prepare(
+      `SELECT id, title, problem, root_cause, solution, status, confidence, quality_score, quality_warnings, created_at, markdown_path
+       FROM memory_cards
+       WHERE status = 'Draft'
+          OR confidence < 0.65
+          OR quality_score < 70
+          OR quality_warnings != '[]'
+       ORDER BY quality_score ASC, created_at DESC
+       LIMIT ?`
+    );
+    const results: SearchResult[] = [];
+
+    try {
+      statement.bind([limit]);
+      while (statement.step()) {
+        results.push(rowToSearchResult(statement.getAsObject() as Row));
+      }
+    } finally {
+      statement.free();
+    }
+
+    return results;
+  }
+
   close(): void {
     this.db?.close();
     this.db = undefined;
@@ -375,6 +408,8 @@ export class SQLiteMemoryStore {
         related_pr TEXT,
         lessons TEXT NOT NULL DEFAULT '',
         confidence REAL NOT NULL,
+        quality_score INTEGER NOT NULL DEFAULT 0,
+        quality_warnings TEXT NOT NULL DEFAULT '[]',
         status TEXT NOT NULL,
         tags TEXT NOT NULL DEFAULT '[]',
         created_at TEXT NOT NULL,
@@ -428,6 +463,9 @@ export class SQLiteMemoryStore {
       CREATE INDEX IF NOT EXISTS idx_verification_events_memory_id ON verification_events(memory_id);
     `);
     this.runMigration('ALTER TABLE commits ADD COLUMN has_working_changes INTEGER NOT NULL DEFAULT 0');
+    this.runMigration('ALTER TABLE memory_cards ADD COLUMN quality_score INTEGER NOT NULL DEFAULT 0');
+    this.runMigration('ALTER TABLE memory_cards ADD COLUMN quality_warnings TEXT NOT NULL DEFAULT \'[]\'');
+    this.database.run('CREATE INDEX IF NOT EXISTS idx_memory_cards_quality_score ON memory_cards(quality_score)');
   }
 
   private async save(): Promise<void> {
@@ -457,6 +495,8 @@ function rowToMemoryCard(row: Row): MemoryCard {
     relatedPr: nullableString(row.related_pr),
     lessons: asString(row.lessons),
     confidence: Number(row.confidence),
+    qualityScore: Number(row.quality_score),
+    qualityWarnings: parseJsonArray(row.quality_warnings),
     status: asString(row.status) as MemoryStatus,
     tags: parseJsonArray(row.tags),
     createdAt: asString(row.created_at),
@@ -478,7 +518,9 @@ function rowToSearchResult(row: Row): SearchResult {
     status: asString(row.status) as MemoryStatus,
     confidence: Number(row.confidence),
     createdAt: asString(row.created_at),
-    markdownPath: nullableString(row.markdown_path)
+    markdownPath: nullableString(row.markdown_path),
+    qualityScore: typeof row.quality_score === 'number' ? Number(row.quality_score) : undefined,
+    qualityWarnings: typeof row.quality_warnings === 'string' ? parseJsonArray(row.quality_warnings) : undefined
   };
 }
 

@@ -18,6 +18,7 @@
     "onCommand:omniMemory.searchMemories",
     "onCommand:omniMemory.updateMemoryStatus",
     "onCommand:omniMemory.verifyMemoryWithCommand",
+    "onCommand:omniMemory.reviewMemoryQueue",
     "onCommand:omniMemory.openMemoryFolder"
   ],
   "main": "./out/extension.js",
@@ -93,6 +94,10 @@
       {
         "command": "omniMemory.verifyMemoryWithCommand",
         "title": "OmniMemory: Verify Memory With Command"
+      },
+      {
+        "command": "omniMemory.reviewMemoryQueue",
+        "title": "OmniMemory: Review Memory Queue"
       },
       {
         "command": "omniMemory.openMemoryFolder",
