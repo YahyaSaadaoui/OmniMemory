@@ -15,6 +15,8 @@
     "onStartupFinished",
     "onCommand:omniMemory.generateFromCurrentContext",
     "onCommand:omniMemory.generateFromGitContext",
+    "onCommand:omniMemory.generateFromClipboard",
+    "onCommand:omniMemory.importConversationTranscript",
     "onCommand:omniMemory.searchMemories",
     "onCommand:omniMemory.findSimilarFromContext",
     "onCommand:omniMemory.updateMemoryStatus",
@@ -43,6 +45,13 @@
           "type": "string",
           "default": "manual",
           "description": "Source label used when the active editor text is captured as a conversation."
+        },
+        "omniMemory.conversationImportMaxCharacters": {
+          "type": "number",
+          "default": 120000,
+          "minimum": 5000,
+          "maximum": 1000000,
+          "description": "Maximum characters imported from clipboard or transcript files."
         },
         "omniMemory.maxDiffCharacters": {
           "type": "number",
@@ -104,6 +113,14 @@
       {
         "command": "omniMemory.generateFromGitContext",
         "title": "OmniMemory: Generate Memory From Git Context"
+      },
+      {
+        "command": "omniMemory.generateFromClipboard",
+        "title": "OmniMemory: Generate Memory From Clipboard"
+      },
+      {
+        "command": "omniMemory.importConversationTranscript",
+        "title": "OmniMemory: Import Conversation Transcript"
       },
       {
         "command": "omniMemory.searchMemories",

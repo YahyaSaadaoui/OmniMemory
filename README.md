@@ -12,6 +12,8 @@ OmniMemory is an Engineering Memory Platform prototype for VS Code. It captures 
 
 If no editor text is available, OmniMemory asks for a short note and can fall back to Git context only.
 
+Clipboard and transcript imports support copied AI conversations from ChatGPT, Cursor, Claude Code, GitHub Copilot, or plain text files while keeping processing local.
+
 When commit detection is enabled, OmniMemory watches the current Git `HEAD` and prompts to generate a memory after a new commit appears.
 
 For clean commit captures, OmniMemory checks whether that commit already has a memory and offers to open the existing card instead of creating a duplicate.
@@ -20,6 +22,8 @@ For clean commit captures, OmniMemory checks whether that commit already has a m
 
 - `OmniMemory: Generate Memory From Current Context`
 - `OmniMemory: Generate Memory From Git Context`
+- `OmniMemory: Generate Memory From Clipboard`
+- `OmniMemory: Import Conversation Transcript`
 - `OmniMemory: Search Memories`
 - `OmniMemory: Find Similar Memories From Context`
 - `OmniMemory: Update Memory Status`
@@ -64,6 +68,7 @@ The database path and memory directory can be changed in VS Code settings.
 - `omniMemory.databasePath`
 - `omniMemory.memoryDirectory`
 - `omniMemory.defaultConversationTool`
+- `omniMemory.conversationImportMaxCharacters`
 - `omniMemory.maxDiffCharacters`
 - `omniMemory.enableCommitDetection`
 - `omniMemory.commitDetectionIntervalSeconds`

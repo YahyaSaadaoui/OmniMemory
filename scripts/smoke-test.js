@@ -2,6 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const initSqlJs = require('sql.js');
+const { detectConversationTool, normalizeImportedConversation } = require('../out/capture/importedConversation');
 const { SQLiteMemoryStore } = require('../out/storage/sqliteMemoryStore');
 const { renderMemoryCardMarkdown, writeMemoryMarkdown } = require('../out/memory/markdown');
 const { parseMemoryMarkdown } = require('../out/memory/markdownParser');
@@ -148,6 +149,8 @@ async function main() {
     minScore: 20
   };
   const suggestionKey = buildSimilaritySuggestionKey(suggestionInput);
+  const importedConversation = normalizeImportedConversation('\u0000ChatGPT\r\nProblem: payment retry loop\r\n'.repeat(200), 120);
+  const detectedTool = detectConversationTool(importedConversation, 'chatgpt-export.md');
 
   assert(card.rootCause === 'Schema compatibility mismatch between producer and consumer.', 'root cause was not synthesized');
   assert(card.qualityScore >= 70, 'complete memory was scored too low');
@@ -165,6 +168,9 @@ async function main() {
   assert(contextResults.some((result) => result.id === weakCard.id), 'context search did not find synced memory');
   assert(shouldSuggestSimilarMemory(suggestionInput), 'diagnostic similarity threshold rejected a good match');
   assert(suggestionKey.includes(contextResults[0].id), 'diagnostic suggestion key did not include result id');
+  assert(importedConversation.length <= 120, 'imported conversation was not truncated');
+  assert(!importedConversation.includes('\u0000'), 'imported conversation was not normalized');
+  assert(detectedTool === 'ChatGPT', 'conversation source was not detected');
   assert(schemaResults.length === 1, 'schema search did not find the memory');
   assert(fileResults.length === 1, 'file search did not find the memory');
   assert(tagResults.length === 1, 'tag search did not find the memory');

@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { detectConversationTool, normalizeImportedConversation } from './capture/importedConversation';
 import { getConfig, getWorkspaceRoot, resolveWorkspacePath } from './config';
 import { captureGitContext, getCurrentGitHead } from './git/gitCapture';
 import { createId } from './id';
@@ -19,6 +20,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(
     vscode.commands.registerCommand('omniMemory.generateFromCurrentContext', () => runCommand(context, generateFromCurrentContext)),
     vscode.commands.registerCommand('omniMemory.generateFromGitContext', () => runCommand(context, generateFromGitContext)),
+    vscode.commands.registerCommand('omniMemory.generateFromClipboard', () => runCommand(context, generateFromClipboard)),
+    vscode.commands.registerCommand('omniMemory.importConversationTranscript', () => runCommand(context, importConversationTranscript)),
     vscode.commands.registerCommand('omniMemory.searchMemories', () => runCommand(context, searchMemories)),
     vscode.commands.registerCommand('omniMemory.findSimilarFromContext', () => runCommand(context, findSimilarFromContext)),
     vscode.commands.registerCommand('omniMemory.updateMemoryStatus', () => runCommand(context, updateMemoryStatus)),
@@ -62,6 +65,72 @@ async function generateFromCurrentContext(context: vscode.ExtensionContext): Pro
   await generateMemory(context, conversationText, 'OmniMemory is generating an engineering memory');
 }
 
+async function generateFromClipboard(context: vscode.ExtensionContext): Promise<void> {
+  const config = getConfig();
+  const clipboardText = normalizeImportedConversation(
+    await vscode.env.clipboard.readText(),
+    config.conversationImportMaxCharacters
+  );
+
+  if (!clipboardText) {
+    await vscode.window.showWarningMessage('Clipboard does not contain conversation text.');
+    return;
+  }
+
+  const tool = await chooseConversationTool(detectConversationTool(clipboardText));
+  if (!tool) {
+    return;
+  }
+
+  await generateMemory(
+    context,
+    clipboardText,
+    'OmniMemory is generating a memory from clipboard',
+    tool
+  );
+}
+
+async function importConversationTranscript(context: vscode.ExtensionContext): Promise<void> {
+  const config = getConfig();
+  const uris = await vscode.window.showOpenDialog({
+    title: 'Import OmniMemory Conversation Transcript',
+    canSelectFiles: true,
+    canSelectFolders: false,
+    canSelectMany: false,
+    filters: {
+      Conversations: ['md', 'txt', 'log', 'json', 'jsonl']
+    }
+  });
+  const uri = uris?.[0];
+
+  if (!uri) {
+    return;
+  }
+
+  const bytes = await vscode.workspace.fs.readFile(uri);
+  const content = normalizeImportedConversation(
+    Buffer.from(bytes).toString('utf8'),
+    config.conversationImportMaxCharacters
+  );
+
+  if (!content) {
+    await vscode.window.showWarningMessage('Selected transcript file is empty.');
+    return;
+  }
+
+  const tool = await chooseConversationTool(detectConversationTool(content, path.basename(uri.fsPath)));
+  if (!tool) {
+    return;
+  }
+
+  await generateMemory(
+    context,
+    content,
+    'OmniMemory is importing a conversation transcript',
+    tool
+  );
+}
+
 async function generateFromGitContext(context: vscode.ExtensionContext): Promise<void> {
   await generateMemory(
     context,
@@ -73,7 +142,8 @@ async function generateFromGitContext(context: vscode.ExtensionContext): Promise
 async function generateMemory(
   context: vscode.ExtensionContext,
   rawConversationText: string,
-  progressTitle: string
+  progressTitle: string,
+  conversationTool?: string
 ): Promise<void> {
   const root = getWorkspaceRoot();
   const config = getConfig();
@@ -89,7 +159,7 @@ async function generateMemory(
 
       const conversation: CapturedConversation = {
         id: createId('conversation'),
-        tool: config.defaultConversationTool,
+        tool: conversationTool ?? config.defaultConversationTool,
         content: sanitizeEngineeringText(rawConversationText.trim() || 'No conversation text was captured.'),
         timestamp: new Date().toISOString()
       };
@@ -722,6 +792,25 @@ async function askForConversationFallback(): Promise<string | undefined> {
   }
 
   return note.trim() || 'No conversation text was captured. Synthesize this memory from Git context only.';
+}
+
+async function chooseConversationTool(detectedTool: string): Promise<string | undefined> {
+  const options = ['manual', 'ChatGPT', 'Cursor', 'Claude Code', 'GitHub Copilot', 'VS Code'];
+  const uniqueOptions = [detectedTool, ...options]
+    .map((tool) => tool.trim())
+    .filter((tool, index, values) => tool && values.indexOf(tool) === index);
+  const picked = await vscode.window.showQuickPick(
+    uniqueOptions.map((tool) => ({
+      label: tool,
+      tool
+    })),
+    {
+      title: 'Conversation Source',
+      placeHolder: 'Which tool produced this transcript?'
+    }
+  );
+
+  return picked?.tool;
 }
 
 async function pickMemory(results: SearchResult[], title: string): Promise<SearchResult | undefined> {
