@@ -6,6 +6,13 @@ export interface OmniMemoryConfig {
   memoryDirectory: string;
   defaultConversationTool: string;
   conversationImportMaxCharacters: number;
+  memoryGeneratorProvider: 'heuristic' | 'openai' | 'command';
+  memoryGeneratorOpenAIModel: string;
+  memoryGeneratorOpenAIEndpoint: string;
+  memoryGeneratorOpenAIApiKeyEnvVar: string;
+  memoryGeneratorCommand: string;
+  memoryGeneratorTimeoutMs: number;
+  memoryGeneratorMaxInputCharacters: number;
   maxDiffCharacters: number;
   enableCommitDetection: boolean;
   commitDetectionIntervalSeconds: number;
@@ -24,6 +31,13 @@ export function getConfig(): OmniMemoryConfig {
     memoryDirectory: config.get<string>('memoryDirectory', '.memory'),
     defaultConversationTool: config.get<string>('defaultConversationTool', 'manual'),
     conversationImportMaxCharacters: config.get<number>('conversationImportMaxCharacters', 120000),
+    memoryGeneratorProvider: config.get<'heuristic' | 'openai' | 'command'>('memoryGeneratorProvider', 'heuristic'),
+    memoryGeneratorOpenAIModel: config.get<string>('memoryGeneratorOpenAIModel', 'gpt-5.5'),
+    memoryGeneratorOpenAIEndpoint: config.get<string>('memoryGeneratorOpenAIEndpoint', 'https://api.openai.com/v1/responses'),
+    memoryGeneratorOpenAIApiKeyEnvVar: config.get<string>('memoryGeneratorOpenAIApiKeyEnvVar', 'OPENAI_API_KEY'),
+    memoryGeneratorCommand: config.get<string>('memoryGeneratorCommand', ''),
+    memoryGeneratorTimeoutMs: config.get<number>('memoryGeneratorTimeoutMs', 60000),
+    memoryGeneratorMaxInputCharacters: config.get<number>('memoryGeneratorMaxInputCharacters', 120000),
     maxDiffCharacters: config.get<number>('maxDiffCharacters', 60000),
     enableCommitDetection: config.get<boolean>('enableCommitDetection', true),
     commitDetectionIntervalSeconds: config.get<number>('commitDetectionIntervalSeconds', 20),

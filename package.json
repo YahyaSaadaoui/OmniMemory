@@ -53,6 +53,50 @@
           "maximum": 1000000,
           "description": "Maximum characters imported from clipboard or transcript files."
         },
+        "omniMemory.memoryGeneratorProvider": {
+          "type": "string",
+          "enum": [
+            "heuristic",
+            "openai",
+            "command"
+          ],
+          "default": "heuristic",
+          "description": "Memory synthesis provider. Heuristic is offline; openai uses the Responses API; command runs a local command that reads JSON context from stdin and outputs JSON."
+        },
+        "omniMemory.memoryGeneratorOpenAIModel": {
+          "type": "string",
+          "default": "gpt-5.5",
+          "description": "OpenAI model used when memoryGeneratorProvider is openai."
+        },
+        "omniMemory.memoryGeneratorOpenAIEndpoint": {
+          "type": "string",
+          "default": "https://api.openai.com/v1/responses",
+          "description": "OpenAI Responses API endpoint used when memoryGeneratorProvider is openai."
+        },
+        "omniMemory.memoryGeneratorOpenAIApiKeyEnvVar": {
+          "type": "string",
+          "default": "OPENAI_API_KEY",
+          "description": "Environment variable containing the OpenAI API key."
+        },
+        "omniMemory.memoryGeneratorCommand": {
+          "type": "string",
+          "default": "",
+          "description": "Local command used when memoryGeneratorProvider is command. It receives JSON context on stdin and must output the memory JSON schema."
+        },
+        "omniMemory.memoryGeneratorTimeoutMs": {
+          "type": "number",
+          "default": 60000,
+          "minimum": 1000,
+          "maximum": 300000,
+          "description": "Timeout for LLM-backed memory generation."
+        },
+        "omniMemory.memoryGeneratorMaxInputCharacters": {
+          "type": "number",
+          "default": 120000,
+          "minimum": 5000,
+          "maximum": 1000000,
+          "description": "Maximum characters sent to an LLM-backed memory generator."
+        },
         "omniMemory.maxDiffCharacters": {
           "type": "number",
           "default": 60000,

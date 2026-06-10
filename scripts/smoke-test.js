@@ -3,6 +3,7 @@ const os = require('os');
 const path = require('path');
 const initSqlJs = require('sql.js');
 const { detectConversationTool, normalizeImportedConversation } = require('../out/capture/importedConversation');
+const { generateMemoryDraft } = require('../out/memory/generator');
 const { SQLiteMemoryStore } = require('../out/storage/sqliteMemoryStore');
 const { renderMemoryCardMarkdown, writeMemoryMarkdown } = require('../out/memory/markdown');
 const { parseMemoryMarkdown } = require('../out/memory/markdownParser');
@@ -151,6 +152,43 @@ async function main() {
   const suggestionKey = buildSimilaritySuggestionKey(suggestionInput);
   const importedConversation = normalizeImportedConversation('\u0000ChatGPT\r\nProblem: payment retry loop\r\n'.repeat(200), 120);
   const detectedTool = detectConversationTool(importedConversation, 'chatgpt-export.md');
+  const generatorScript = path.join(tempRoot, 'generator.js');
+  fs.writeFileSync(generatorScript, `
+process.stdin.resume();
+process.stdin.on('data', () => {});
+process.stdin.on('end', () => {
+  process.stdout.write(JSON.stringify({
+    title: 'LLM Generated Kafka Memory',
+    problem: 'Kafka consumer failed on schema v2 messages.',
+    symptoms: 'Consumer crashed while reading messages.',
+    rootCause: 'Schema compatibility mismatch.',
+    attempts: 'Checked serializer and topic configuration.',
+    solution: 'Updated compatibility strategy.',
+    relatedPr: null,
+    lessons: 'Validate schema evolution before deployment.',
+    confidence: 0.91,
+    tags: ['kafka', 'schema']
+  }));
+});
+`);
+  const commandGeneration = await generateMemoryDraft(conversation, commit, {
+    provider: 'command',
+    openAIModel: 'unused',
+    openAIEndpoint: 'https://api.openai.com/v1/responses',
+    openAIApiKeyEnvVar: 'OMNIMEMORY_UNUSED',
+    command: `"${process.execPath}" "${generatorScript}"`,
+    timeoutMs: 10000,
+    maxInputCharacters: 50000
+  });
+  const fallbackGeneration = await generateMemoryDraft(conversation, commit, {
+    provider: 'openai',
+    openAIModel: 'gpt-5.5',
+    openAIEndpoint: 'https://api.openai.com/v1/responses',
+    openAIApiKeyEnvVar: 'OMNIMEMORY_MISSING_TEST_KEY',
+    command: '',
+    timeoutMs: 1000,
+    maxInputCharacters: 50000
+  });
 
   assert(card.rootCause === 'Schema compatibility mismatch between producer and consumer.', 'root cause was not synthesized');
   assert(card.qualityScore >= 70, 'complete memory was scored too low');
@@ -171,6 +209,10 @@ async function main() {
   assert(importedConversation.length <= 120, 'imported conversation was not truncated');
   assert(!importedConversation.includes('\u0000'), 'imported conversation was not normalized');
   assert(detectedTool === 'ChatGPT', 'conversation source was not detected');
+  assert(commandGeneration.provider === 'command', 'command generator was not used');
+  assert(commandGeneration.draft.title === 'LLM Generated Kafka Memory', 'command generator output was not parsed');
+  assert(fallbackGeneration.provider === 'heuristic', 'OpenAI failure did not fall back to heuristic');
+  assert(Boolean(fallbackGeneration.fallbackReason), 'OpenAI fallback did not report a reason');
   assert(schemaResults.length === 1, 'schema search did not find the memory');
   assert(fileResults.length === 1, 'file search did not find the memory');
   assert(tagResults.length === 1, 'tag search did not find the memory');

@@ -4,9 +4,9 @@ import { detectConversationTool, normalizeImportedConversation } from './capture
 import { getConfig, getWorkspaceRoot, resolveWorkspacePath } from './config';
 import { captureGitContext, getCurrentGitHead } from './git/gitCapture';
 import { createId } from './id';
+import { generateMemoryDraft } from './memory/generator';
 import { overwriteMemoryMarkdown, renderMemoryCardMarkdown, writeMemoryMarkdown } from './memory/markdown';
 import { parseMemoryMarkdown } from './memory/markdownParser';
-import { synthesizeMemory } from './memory/synthesizer';
 import { sanitizeEngineeringText } from './security/sanitizer';
 import { SQLiteMemoryStore } from './storage/sqliteMemoryStore';
 import { CapturedConversation, MemoryStatus, SearchResult } from './types';
@@ -176,10 +176,18 @@ async function generateMemory(
       }
 
       progress.report({ message: 'Synthesizing memory card...' });
-      const draft = synthesizeMemory(conversation, commit);
+      const generation = await generateMemoryDraft(conversation, commit, {
+        provider: config.memoryGeneratorProvider,
+        openAIModel: config.memoryGeneratorOpenAIModel,
+        openAIEndpoint: config.memoryGeneratorOpenAIEndpoint,
+        openAIApiKeyEnvVar: config.memoryGeneratorOpenAIApiKeyEnvVar,
+        command: config.memoryGeneratorCommand,
+        timeoutMs: config.memoryGeneratorTimeoutMs,
+        maxInputCharacters: config.memoryGeneratorMaxInputCharacters
+      });
       await db.insertConversation(conversation);
       await db.insertCommit(commit);
-      const card = await db.insertMemoryCard(draft);
+      const card = await db.insertMemoryCard(generation.draft);
 
       progress.report({ message: 'Writing local memory artifacts...' });
       const memoryDirectory = resolveWorkspacePath(root, config.memoryDirectory);
@@ -188,6 +196,10 @@ async function generateMemory(
       await db.refreshSimilarMemoryLinks(card.id);
       const savedCard = db.getMemoryCard(card.id) ?? card;
       await overwriteMemoryMarkdown(markdownPath, savedCard);
+
+      if (generation.fallbackReason) {
+        await vscode.window.showWarningMessage(`OmniMemory used heuristic generation after ${config.memoryGeneratorProvider} failed: ${generation.fallbackReason}`);
+      }
 
       const action = await vscode.window.showInformationMessage(
         `OmniMemory saved "${savedCard.title}".`,

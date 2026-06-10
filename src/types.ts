@@ -1,5 +1,6 @@
 export type MemoryStatus = 'Draft' | 'Verified' | 'Production Verified' | 'Deprecated';
 export type VerificationEventKind = 'command';
+export type MemoryGeneratorProvider = 'heuristic' | 'openai' | 'command';
 
 export interface CapturedConversation {
   id: string;
@@ -61,6 +62,35 @@ export interface MemoryDraft {
   tags: string[];
   sourceCommitId: string | null;
   sourceConversationId: string | null;
+}
+
+export interface GeneratedMemoryPayload {
+  title: string;
+  problem: string;
+  symptoms: string;
+  rootCause: string;
+  attempts: string;
+  solution: string;
+  relatedPr: string | null;
+  lessons: string;
+  confidence: number;
+  tags: string[];
+}
+
+export interface MemoryGenerationOptions {
+  provider: MemoryGeneratorProvider;
+  openAIModel: string;
+  openAIEndpoint: string;
+  openAIApiKeyEnvVar: string;
+  command: string;
+  timeoutMs: number;
+  maxInputCharacters: number;
+}
+
+export interface MemoryGenerationResult {
+  draft: MemoryDraft;
+  provider: MemoryGeneratorProvider;
+  fallbackReason?: string;
 }
 
 export interface MemoryCardUpdate {

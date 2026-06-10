@@ -14,6 +14,10 @@ If no editor text is available, OmniMemory asks for a short note and can fall ba
 
 Clipboard and transcript imports support copied AI conversations from ChatGPT, Cursor, Claude Code, GitHub Copilot, or plain text files while keeping processing local.
 
+Memory generation defaults to the offline heuristic generator. For higher-quality synthesis, set `omniMemory.memoryGeneratorProvider` to `openai` or `command`; failed LLM generations fall back to the heuristic generator.
+
+The `command` provider receives conversation and Git context as JSON on stdin and must output JSON with: `title`, `problem`, `symptoms`, `rootCause`, `attempts`, `solution`, `relatedPr`, `lessons`, `confidence`, and `tags`.
+
 When commit detection is enabled, OmniMemory watches the current Git `HEAD` and prompts to generate a memory after a new commit appears.
 
 For clean commit captures, OmniMemory checks whether that commit already has a memory and offers to open the existing card instead of creating a duplicate.
@@ -69,6 +73,13 @@ The database path and memory directory can be changed in VS Code settings.
 - `omniMemory.memoryDirectory`
 - `omniMemory.defaultConversationTool`
 - `omniMemory.conversationImportMaxCharacters`
+- `omniMemory.memoryGeneratorProvider`
+- `omniMemory.memoryGeneratorOpenAIModel`
+- `omniMemory.memoryGeneratorOpenAIEndpoint`
+- `omniMemory.memoryGeneratorOpenAIApiKeyEnvVar`
+- `omniMemory.memoryGeneratorCommand`
+- `omniMemory.memoryGeneratorTimeoutMs`
+- `omniMemory.memoryGeneratorMaxInputCharacters`
 - `omniMemory.maxDiffCharacters`
 - `omniMemory.enableCommitDetection`
 - `omniMemory.commitDetectionIntervalSeconds`
