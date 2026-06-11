@@ -26,6 +26,8 @@ For clean commit captures, OmniMemory checks whether that commit already has a m
 
 The Explorer sidebar includes an OmniMemory view with Review Queue and Recent Memories sections for opening cards without using search first.
 
+Regex sanitization redacts common secrets before synthesis/storage and records category counts in each memory card's Security Review section.
+
 ## Commands
 
 - `OmniMemory: Generate Memory From Current Context`
@@ -33,6 +35,7 @@ The Explorer sidebar includes an OmniMemory view with Review Queue and Recent Me
 - `OmniMemory: Generate Memory From Last Git Commit`
 - `OmniMemory: Generate Memory From Clipboard`
 - `OmniMemory: Import Conversation Transcript`
+- `OmniMemory: Scan Active Text For Secrets`
 - `OmniMemory: Search Memories`
 - `OmniMemory: Find Similar Memories From Context`
 - `OmniMemory: Update Memory Status`

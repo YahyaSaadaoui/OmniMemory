@@ -1,6 +1,7 @@
 export type MemoryStatus = 'Draft' | 'Verified' | 'Production Verified' | 'Deprecated';
 export type VerificationEventKind = 'command';
 export type MemoryGeneratorProvider = 'heuristic' | 'openai' | 'command';
+export type RedactionSource = 'conversation' | 'git_diff' | 'git_summary' | 'verification_output';
 
 export interface CapturedConversation {
   id: string;
@@ -44,6 +45,7 @@ export interface MemoryCard {
   sourceConversationId: string | null;
   markdownPath: string | null;
   verificationEvents: VerificationEvent[];
+  redactionEvents: RedactionEvent[];
   relatedMemories: RelatedMemoryLink[];
 }
 
@@ -139,6 +141,24 @@ export interface VerificationEventDraft {
   command: string;
   exitCode: number;
   output: string;
+}
+
+export interface RedactionEvent {
+  id: string;
+  memoryId: string;
+  source: RedactionSource;
+  label: string;
+  replacement: string;
+  count: number;
+  createdAt: string;
+}
+
+export interface RedactionEventDraft {
+  memoryId: string;
+  source: RedactionSource;
+  label: string;
+  replacement: string;
+  count: number;
 }
 
 export interface RelatedMemoryLink {

@@ -7,11 +7,12 @@ import { createId } from './id';
 import { generateMemoryDraft } from './memory/generator';
 import { overwriteMemoryMarkdown, renderMemoryCardMarkdown, writeMemoryMarkdown } from './memory/markdown';
 import { parseMemoryMarkdown } from './memory/markdownParser';
-import { sanitizeEngineeringText } from './security/sanitizer';
+import { RedactionFinding, SanitizationReport, sanitizeEngineeringTextWithReport } from './security/sanitizer';
 import { SQLiteMemoryStore } from './storage/sqliteMemoryStore';
-import { CapturedConversation, MemoryStatus, SearchResult } from './types';
+import { CapturedConversation, MemoryStatus, RedactionEventDraft, RedactionSource, SearchResult } from './types';
 import { buildRetrievalQuery } from './retrieval/contextQuery';
 import { buildSimilaritySuggestionKey, shouldSuggestSimilarMemory } from './retrieval/similaritySuggestion';
+import { truncate } from './text';
 import { runVerificationCommand } from './verification/commandVerifier';
 import { MemoryExplorerProvider } from './views/memoryExplorer';
 
@@ -28,6 +29,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('omniMemory.generateFromLastCommit', () => runCommand(context, generateFromLastCommit)),
     vscode.commands.registerCommand('omniMemory.generateFromClipboard', () => runCommand(context, generateFromClipboard)),
     vscode.commands.registerCommand('omniMemory.importConversationTranscript', () => runCommand(context, importConversationTranscript)),
+    vscode.commands.registerCommand('omniMemory.scanActiveTextForSecrets', () => runCommand(context, scanActiveTextForSecrets)),
     vscode.commands.registerCommand('omniMemory.searchMemories', () => runCommand(context, searchMemories)),
     vscode.commands.registerCommand('omniMemory.findSimilarFromContext', () => runCommand(context, findSimilarFromContext)),
     vscode.commands.registerCommand('omniMemory.updateMemoryStatus', () => runCommand(context, updateMemoryStatus)),
@@ -139,6 +141,26 @@ async function importConversationTranscript(context: vscode.ExtensionContext): P
   );
 }
 
+async function scanActiveTextForSecrets(): Promise<void> {
+  const activeText = readActiveEditorText();
+  if (!activeText.trim()) {
+    await vscode.window.showWarningMessage('Open or select text before scanning it for OmniMemory redactions.');
+    return;
+  }
+
+  const report = sanitizeEngineeringTextWithReport(activeText);
+  if (report.redactionCount === 0) {
+    await vscode.window.showInformationMessage('OmniMemory found no sensitive values in the active text.');
+    return;
+  }
+
+  const document = await vscode.workspace.openTextDocument({
+    content: renderSanitizationScan(report),
+    language: 'markdown'
+  });
+  await vscode.window.showTextDocument(document);
+}
+
 async function generateFromGitContext(context: vscode.ExtensionContext): Promise<void> {
   await generateMemory(
     context,
@@ -185,17 +207,20 @@ async function generateMemory(
     async (progress) => {
       progress.report({ message: 'Capturing conversation and Git context...' });
 
+      const conversationSanitization = sanitizeEngineeringTextWithReport(rawConversationText.trim() || 'No conversation text was captured.');
       const conversation: CapturedConversation = {
         id: createId('conversation'),
         tool: conversationTool ?? config.defaultConversationTool,
-        content: sanitizeEngineeringText(rawConversationText.trim() || 'No conversation text was captured.'),
+        content: conversationSanitization.text,
         timestamp: new Date().toISOString()
       };
       const capturedCommit = await captureGitContext(root, config.maxDiffCharacters, gitCaptureMode);
+      const diffSanitization = sanitizeEngineeringTextWithReport(capturedCommit.diff);
+      const diffSummarySanitization = sanitizeEngineeringTextWithReport(capturedCommit.diffSummary);
       const commit = {
         ...capturedCommit,
-        diff: sanitizeEngineeringText(capturedCommit.diff),
-        diffSummary: sanitizeEngineeringText(capturedCommit.diffSummary)
+        diff: diffSanitization.text,
+        diffSummary: diffSummarySanitization.text
       };
       const db = await getStore(context);
 
@@ -216,6 +241,11 @@ async function generateMemory(
       await db.insertConversation(conversation);
       await db.insertCommit(commit);
       const card = await db.insertMemoryCard(generation.draft);
+      await db.addRedactionEvents([
+        ...toRedactionEventDrafts(card.id, 'conversation', conversationSanitization.findings),
+        ...toRedactionEventDrafts(card.id, 'git_diff', diffSanitization.findings),
+        ...toRedactionEventDrafts(card.id, 'git_summary', diffSummarySanitization.findings)
+      ]);
 
       progress.report({ message: 'Writing local memory artifacts...' });
       const memoryDirectory = resolveWorkspacePath(root, config.memoryDirectory);
@@ -225,6 +255,11 @@ async function generateMemory(
       const savedCard = db.getMemoryCard(card.id) ?? card;
       await overwriteMemoryMarkdown(markdownPath, savedCard);
       refreshMemoryExplorer();
+
+      const redactionCount = conversationSanitization.redactionCount + diffSanitization.redactionCount + diffSummarySanitization.redactionCount;
+      if (redactionCount > 0) {
+        await vscode.window.showWarningMessage(`OmniMemory redacted ${redactionCount} sensitive value${redactionCount === 1 ? '' : 's'} before saving.`);
+      }
 
       if (generation.fallbackReason) {
         await vscode.window.showWarningMessage(`OmniMemory used heuristic generation after ${config.memoryGeneratorProvider} failed: ${generation.fallbackReason}`);
@@ -469,13 +504,15 @@ async function verifyMemoryWithCommand(context: vscode.ExtensionContext): Promis
       progress.report({ message: command });
 
       const result = await runVerificationCommand(command, root, config.maxVerificationOutputCharacters);
+      const verificationSanitization = sanitizeEngineeringTextWithReport(result.output);
       await db.addVerificationEvent({
         memoryId: picked.id,
         kind: 'command',
         command,
         exitCode: result.exitCode,
-        output: result.output
+        output: verificationSanitization.text
       });
+      await db.addRedactionEvents(toRedactionEventDrafts(picked.id, 'verification_output', verificationSanitization.findings));
 
       const updated = result.exitCode === 0
         ? await db.updateStatus(picked.id, 'Verified')
@@ -494,6 +531,9 @@ async function verifyMemoryWithCommand(context: vscode.ExtensionContext): Promis
       const message = result.exitCode === 0
         ? `OmniMemory verified "${updated.title}".`
         : `OmniMemory recorded failed verification for "${updated.title}".`;
+      if (verificationSanitization.redactionCount > 0) {
+        await vscode.window.showWarningMessage(`OmniMemory redacted ${verificationSanitization.redactionCount} sensitive value${verificationSanitization.redactionCount === 1 ? '' : 's'} from verification output.`);
+      }
       const action = await vscode.window.showInformationMessage(message, 'Open Memory Card');
 
       if (action === 'Open Memory Card') {
@@ -746,6 +786,41 @@ function resolveMemoryIdArgument(input: unknown): string | undefined {
   }
 
   return undefined;
+}
+
+function toRedactionEventDrafts(
+  memoryId: string,
+  source: RedactionSource,
+  findings: RedactionFinding[]
+): RedactionEventDraft[] {
+  return findings.map((finding) => ({
+    memoryId,
+    source,
+    label: finding.label,
+    replacement: finding.replacement,
+    count: finding.count
+  }));
+}
+
+function renderSanitizationScan(report: SanitizationReport): string {
+  const summary = report.findings
+    .map((finding) => `- ${finding.label}: ${finding.count} -> \`${finding.replacement}\``)
+    .join('\n');
+
+  return `# OmniMemory Sanitization Scan
+
+Redactions: ${report.redactionCount}
+
+## Findings
+
+${summary}
+
+## Sanitized Preview
+
+\`\`\`text
+${truncate(report.text, 20000)}
+\`\`\`
+`;
 }
 
 async function openMemory(context: vscode.ExtensionContext, id: string): Promise<void> {

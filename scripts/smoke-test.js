@@ -13,6 +13,7 @@ const { synthesizeMemory } = require('../out/memory/synthesizer');
 const { localEmbeddingDimensions } = require('../out/retrieval/localEmbedding');
 const { buildRetrievalQuery } = require('../out/retrieval/contextQuery');
 const { buildSimilaritySuggestionKey, shouldSuggestSimilarMemory } = require('../out/retrieval/similaritySuggestion');
+const { sanitizeEngineeringTextWithReport } = require('../out/security/sanitizer');
 
 async function main() {
   assertExtensionManifest();
@@ -57,6 +58,16 @@ async function main() {
   await store.insertCommit(commit);
 
   const card = await store.insertMemoryCard(synthesizeMemory(conversation, commit));
+  const secretReport = sanitizeEngineeringTextWithReport(`password=supersecret ghp_${'a'.repeat(36)}`);
+  await store.addRedactionEvents(secretReport.findings.map((finding) => ({
+    memoryId: card.id,
+    source: 'conversation',
+    label: finding.label,
+    replacement: finding.replacement,
+    count: finding.count
+  })));
+  const redactedCard = store.getMemoryCard(card.id);
+  const securityMarkdown = renderMemoryCardMarkdown(redactedCard);
   const markdownPath = await writeMemoryMarkdown(memoryDir, card);
   await store.setMarkdownPath(card.id, path.relative(tempRoot, markdownPath));
   await store.addVerificationEvent({
@@ -199,6 +210,12 @@ process.stdin.on('end', () => {
 
   assert(card.rootCause === 'Schema compatibility mismatch between producer and consumer.', 'root cause was not synthesized');
   assert(card.qualityScore >= 70, 'complete memory was scored too low');
+  assert(secretReport.redactionCount === 2, 'secret sanitizer did not count redactions');
+  assert(secretReport.text.includes('[REDACTED_SECRET_ASSIGNMENT]'), 'secret assignment was not redacted');
+  assert(secretReport.text.includes('[REDACTED_GITHUB_TOKEN]'), 'GitHub token was not redacted');
+  assert(redactedCard.redactionEvents.length === 2, 'redaction events were not stored');
+  assert(securityMarkdown.includes('## Security Review'), 'security review was not rendered');
+  assert(securityMarkdown.includes('GitHub token'), 'security review did not include token label');
   assert(cardEmbedding && cardEmbedding.length === localEmbeddingDimensions, 'memory embedding was not stored');
   assert(verified && verified.status === 'Verified', 'memory was not marked verified');
   assert(verificationEvents.length === 1, 'verification event was not stored');
@@ -246,7 +263,9 @@ function assertExtensionManifest() {
 
   assert(commands.has('omniMemory.openMemory'), 'manifest is missing open memory command');
   assert(commands.has('omniMemory.refreshExplorer'), 'manifest is missing refresh explorer command');
+  assert(commands.has('omniMemory.scanActiveTextForSecrets'), 'manifest is missing secret scan command');
   assert(activationEvents.has('onView:omniMemory.memories'), 'manifest is missing OmniMemory view activation');
+  assert(activationEvents.has('onCommand:omniMemory.scanActiveTextForSecrets'), 'manifest is missing secret scan activation');
   assert(explorerViews.some((view) => view.id === 'omniMemory.memories'), 'manifest is missing OmniMemory Explorer view');
   assert(titleMenus.some((menu) => menu.command === 'omniMemory.refreshExplorer'), 'manifest is missing Explorer refresh menu');
   assert(itemMenus.some((menu) => menu.command === 'omniMemory.openMemory'), 'manifest is missing Explorer open menu');

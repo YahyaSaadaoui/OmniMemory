@@ -17,6 +17,9 @@ import {
   MemoryDraft,
   MemoryCardUpdate,
   MemoryStatus,
+  RedactionEvent,
+  RedactionEventDraft,
+  RedactionSource,
   RelatedMemoryLink,
   SearchResult,
   VerificationEvent,
@@ -114,6 +117,7 @@ export class SQLiteMemoryStore {
       updatedAt: now,
       markdownPath: null,
       verificationEvents: [],
+      redactionEvents: [],
       relatedMemories: []
     };
 
@@ -273,6 +277,38 @@ export class SQLiteMemoryStore {
     return event;
   }
 
+  async addRedactionEvents(drafts: RedactionEventDraft[]): Promise<RedactionEvent[]> {
+    if (drafts.length === 0) {
+      return [];
+    }
+
+    const now = new Date().toISOString();
+    const events = drafts.map((draft) => ({
+      id: createId('redaction'),
+      createdAt: now,
+      ...draft
+    }));
+
+    for (const event of events) {
+      this.database.run(
+        `INSERT INTO redaction_events (id, memory_id, source, label, replacement, count, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          event.id,
+          event.memoryId,
+          event.source,
+          event.label,
+          event.replacement,
+          event.count,
+          event.createdAt
+        ]
+      );
+    }
+
+    await this.save();
+    return events;
+  }
+
   getMemoryCard(id: string): MemoryCard | undefined {
     const statement = this.database.prepare(
       `SELECT *
@@ -290,6 +326,7 @@ export class SQLiteMemoryStore {
       return {
         ...card,
         verificationEvents: this.listVerificationEvents(card.id),
+        redactionEvents: this.listRedactionEvents(card.id),
         relatedMemories: this.listRelatedMemoryLinks(card.id)
       };
     } finally {
@@ -310,6 +347,27 @@ export class SQLiteMemoryStore {
       statement.bind([memoryId]);
       while (statement.step()) {
         results.push(rowToVerificationEvent(statement.getAsObject() as Row));
+      }
+    } finally {
+      statement.free();
+    }
+
+    return results;
+  }
+
+  listRedactionEvents(memoryId: string): RedactionEvent[] {
+    const statement = this.database.prepare(
+      `SELECT *
+       FROM redaction_events
+       WHERE memory_id = ?
+       ORDER BY created_at DESC, source ASC, label ASC`
+    );
+    const results: RedactionEvent[] = [];
+
+    try {
+      statement.bind([memoryId]);
+      while (statement.step()) {
+        results.push(rowToRedactionEvent(statement.getAsObject() as Row));
       }
     } finally {
       statement.free();
@@ -627,6 +685,17 @@ export class SQLiteMemoryStore {
         FOREIGN KEY(memory_id) REFERENCES memory_cards(id)
       );
 
+      CREATE TABLE IF NOT EXISTS redaction_events (
+        id TEXT PRIMARY KEY,
+        memory_id TEXT NOT NULL,
+        source TEXT NOT NULL,
+        label TEXT NOT NULL,
+        replacement TEXT NOT NULL,
+        count INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(memory_id) REFERENCES memory_cards(id)
+      );
+
       CREATE TABLE IF NOT EXISTS memory_links (
         id TEXT PRIMARY KEY,
         source_memory_id TEXT NOT NULL,
@@ -642,6 +711,7 @@ export class SQLiteMemoryStore {
       CREATE INDEX IF NOT EXISTS idx_memory_cards_created_at ON memory_cards(created_at);
       CREATE INDEX IF NOT EXISTS idx_memory_cards_title ON memory_cards(title);
       CREATE INDEX IF NOT EXISTS idx_verification_events_memory_id ON verification_events(memory_id);
+      CREATE INDEX IF NOT EXISTS idx_redaction_events_memory_id ON redaction_events(memory_id);
       CREATE INDEX IF NOT EXISTS idx_memory_links_source_memory_id ON memory_links(source_memory_id);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_links_pair ON memory_links(source_memory_id, target_memory_id);
     `);
@@ -729,6 +799,7 @@ function rowToMemoryCard(row: Row): MemoryCard {
     sourceConversationId: nullableString(row.source_conversation_id),
     markdownPath: nullableString(row.markdown_path),
     verificationEvents: [],
+    redactionEvents: [],
     relatedMemories: []
   };
 }
@@ -773,6 +844,18 @@ function rowToVerificationEvent(row: Row): VerificationEvent {
     command: asString(row.command),
     exitCode: Number(row.exit_code),
     output: asString(row.output),
+    createdAt: asString(row.created_at)
+  };
+}
+
+function rowToRedactionEvent(row: Row): RedactionEvent {
+  return {
+    id: asString(row.id),
+    memoryId: asString(row.memory_id),
+    source: asString(row.source) as RedactionSource,
+    label: asString(row.label),
+    replacement: asString(row.replacement),
+    count: Number(row.count),
     createdAt: asString(row.created_at)
   };
 }

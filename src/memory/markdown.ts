@@ -72,6 +72,10 @@ ${formatVerification(card)}
 
 ${formatQualityReview(card)}
 
+## Security Review
+
+${formatSecurityReview(card)}
+
 ## Source
 
 - Memory ID: ${card.id}
@@ -137,4 +141,27 @@ function formatQualityReview(card: MemoryCard): string {
   }
 
   return card.qualityWarnings.map((warning) => `- ${warning}`).join('\n');
+}
+
+function formatSecurityReview(card: MemoryCard): string {
+  if (card.redactionEvents.length === 0) {
+    return 'No sensitive values were redacted.';
+  }
+
+  return card.redactionEvents
+    .map((event) => `- ${formatRedactionSource(event.source)}: ${event.label} x${event.count} -> \`${event.replacement}\``)
+    .join('\n');
+}
+
+function formatRedactionSource(source: string): string {
+  switch (source) {
+    case 'git_diff':
+      return 'Git diff';
+    case 'git_summary':
+      return 'Git summary';
+    case 'verification_output':
+      return 'Verification output';
+    default:
+      return 'Conversation';
+  }
 }
