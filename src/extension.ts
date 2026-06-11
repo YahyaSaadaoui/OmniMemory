@@ -13,11 +13,16 @@ import { CapturedConversation, MemoryStatus, SearchResult } from './types';
 import { buildRetrievalQuery } from './retrieval/contextQuery';
 import { buildSimilaritySuggestionKey, shouldSuggestSimilarMemory } from './retrieval/similaritySuggestion';
 import { runVerificationCommand } from './verification/commandVerifier';
+import { MemoryExplorerProvider } from './views/memoryExplorer';
 
 let store: SQLiteMemoryStore | undefined;
+let memoryExplorerProvider: MemoryExplorerProvider | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  memoryExplorerProvider = new MemoryExplorerProvider(() => getStore(context));
+
   context.subscriptions.push(
+    vscode.window.registerTreeDataProvider('omniMemory.memories', memoryExplorerProvider),
     vscode.commands.registerCommand('omniMemory.generateFromCurrentContext', () => runCommand(context, generateFromCurrentContext)),
     vscode.commands.registerCommand('omniMemory.generateFromGitContext', () => runCommand(context, generateFromGitContext)),
     vscode.commands.registerCommand('omniMemory.generateFromLastCommit', () => runCommand(context, generateFromLastCommit)),
@@ -30,6 +35,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('omniMemory.reviewMemoryQueue', () => runCommand(context, reviewMemoryQueue)),
     vscode.commands.registerCommand('omniMemory.syncActiveMemoryMarkdown', () => runCommand(context, syncActiveMemoryMarkdown)),
     vscode.commands.registerCommand('omniMemory.refreshRelatedMemories', () => runCommand(context, refreshRelatedMemories)),
+    vscode.commands.registerCommand('omniMemory.openMemory', (input?: unknown) => runCommand(context, () => openMemoryCommand(context, input))),
+    vscode.commands.registerCommand('omniMemory.refreshExplorer', () => refreshMemoryExplorer()),
     vscode.commands.registerCommand('omniMemory.openMemoryFolder', () => runCommand(context, openMemoryFolder))
   );
 
@@ -217,6 +224,7 @@ async function generateMemory(
       await db.refreshSimilarMemoryLinks(card.id);
       const savedCard = db.getMemoryCard(card.id) ?? card;
       await overwriteMemoryMarkdown(markdownPath, savedCard);
+      refreshMemoryExplorer();
 
       if (generation.fallbackReason) {
         await vscode.window.showWarningMessage(`OmniMemory used heuristic generation after ${config.memoryGeneratorProvider} failed: ${generation.fallbackReason}`);
@@ -336,6 +344,7 @@ async function updateMemoryStatus(context: vscode.ExtensionContext): Promise<voi
     await overwriteMemoryMarkdown(path.resolve(root, updated.markdownPath), updated);
   }
 
+  refreshMemoryExplorer();
   await vscode.window.showInformationMessage(`OmniMemory marked "${updated.title}" as ${status}.`);
 }
 
@@ -394,6 +403,7 @@ async function syncActiveMemoryMarkdown(context: vscode.ExtensionContext): Promi
     await overwriteMemoryMarkdown(targetPath, savedCard);
   }
 
+  refreshMemoryExplorer();
   await vscode.window.showInformationMessage(`OmniMemory synced "${savedCard.title}".`);
 }
 
@@ -418,6 +428,7 @@ async function refreshRelatedMemories(context: vscode.ExtensionContext): Promise
     await overwriteMemoryMarkdown(path.resolve(root, card.markdownPath), card);
   }
 
+  refreshMemoryExplorer();
   await vscode.window.showInformationMessage(`OmniMemory linked ${links.length} related memories for "${card.title}".`);
 }
 
@@ -479,6 +490,7 @@ async function verifyMemoryWithCommand(context: vscode.ExtensionContext): Promis
         await overwriteMemoryMarkdown(path.resolve(root, updated.markdownPath), updated);
       }
 
+      refreshMemoryExplorer();
       const message = result.exitCode === 0
         ? `OmniMemory verified "${updated.title}".`
         : `OmniMemory recorded failed verification for "${updated.title}".`;
@@ -698,6 +710,44 @@ async function shouldSkipDuplicateCleanCommit(
   return action !== 'Generate Anyway';
 }
 
+async function openMemoryCommand(context: vscode.ExtensionContext, input?: unknown): Promise<void> {
+  const id = resolveMemoryIdArgument(input);
+
+  if (id) {
+    await openMemory(context, id);
+    return;
+  }
+
+  const db = await getStore(context);
+  const picked = await pickMemory(db.listRecentMemories(), 'Open a memory card');
+  if (!picked) {
+    return;
+  }
+
+  await openMemory(context, picked.id);
+}
+
+function resolveMemoryIdArgument(input: unknown): string | undefined {
+  if (typeof input === 'string') {
+    return input;
+  }
+
+  if (!input || typeof input !== 'object') {
+    return undefined;
+  }
+
+  const candidate = input as { id?: unknown; result?: { id?: unknown } };
+  if (typeof candidate.id === 'string') {
+    return candidate.id;
+  }
+
+  if (typeof candidate.result?.id === 'string') {
+    return candidate.result.id;
+  }
+
+  return undefined;
+}
+
 async function openMemory(context: vscode.ExtensionContext, id: string): Promise<void> {
   const root = getWorkspaceRoot();
   const db = await getStore(context);
@@ -879,4 +929,8 @@ function formatSearchDescription(result: SearchResult): string {
   }
 
   return parts.join(' · ');
+}
+
+function refreshMemoryExplorer(): void {
+  memoryExplorerProvider?.refresh();
 }

@@ -24,6 +24,8 @@ Detected commits and `OmniMemory: Generate Memory From Last Git Commit` capture 
 
 For clean commit captures, OmniMemory checks whether that commit already has a memory and offers to open the existing card instead of creating a duplicate.
 
+The Explorer sidebar includes an OmniMemory view with Review Queue and Recent Memories sections for opening cards without using search first.
+
 ## Commands
 
 - `OmniMemory: Generate Memory From Current Context`
@@ -38,6 +40,8 @@ For clean commit captures, OmniMemory checks whether that commit already has a m
 - `OmniMemory: Review Memory Queue`
 - `OmniMemory: Sync Active Memory Markdown`
 - `OmniMemory: Refresh Related Memories`
+- `OmniMemory: Open Memory`
+- `OmniMemory: Refresh Explorer`
 - `OmniMemory: Open Memory Folder`
 
 Search ranks local memories by title, tags, files changed, root cause, solution, problem, symptoms, lessons, and attempts.

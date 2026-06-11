@@ -14,6 +14,7 @@
   ],
   "activationEvents": [
     "onStartupFinished",
+    "onView:omniMemory.memories",
     "onCommand:omniMemory.generateFromCurrentContext",
     "onCommand:omniMemory.generateFromGitContext",
     "onCommand:omniMemory.generateFromLastCommit",
@@ -26,6 +27,8 @@
     "onCommand:omniMemory.reviewMemoryQueue",
     "onCommand:omniMemory.syncActiveMemoryMarkdown",
     "onCommand:omniMemory.refreshRelatedMemories",
+    "onCommand:omniMemory.openMemory",
+    "onCommand:omniMemory.refreshExplorer",
     "onCommand:omniMemory.openMemoryFolder"
   ],
   "main": "./out/extension.js",
@@ -201,10 +204,43 @@
         "title": "OmniMemory: Refresh Related Memories"
       },
       {
+        "command": "omniMemory.openMemory",
+        "title": "OmniMemory: Open Memory"
+      },
+      {
+        "command": "omniMemory.refreshExplorer",
+        "title": "OmniMemory: Refresh Explorer",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "omniMemory.openMemoryFolder",
         "title": "OmniMemory: Open Memory Folder"
       }
-    ]
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "omniMemory.memories",
+          "name": "OmniMemory"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "omniMemory.refreshExplorer",
+          "when": "view == omniMemory.memories",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "omniMemory.openMemory",
+          "when": "view == omniMemory.memories && viewItem == omniMemoryCard",
+          "group": "inline"
+        }
+      ]
+    }
   },
   "scripts": {
     "compile": "tsc -p ./",

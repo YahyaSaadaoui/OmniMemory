@@ -15,6 +15,8 @@ const { buildRetrievalQuery } = require('../out/retrieval/contextQuery');
 const { buildSimilaritySuggestionKey, shouldSuggestSimilarMemory } = require('../out/retrieval/similaritySuggestion');
 
 async function main() {
+  assertExtensionManifest();
+
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omnimemory-smoke-'));
   const dbPath = path.join(tempRoot, 'omnimemory.sqlite');
   const memoryDir = path.join(tempRoot, '.memory');
@@ -232,6 +234,22 @@ process.stdin.on('end', () => {
   fs.rmSync(tempRoot, { recursive: true, force: true });
 
   console.log('OmniMemory smoke test passed');
+}
+
+function assertExtensionManifest() {
+  const manifest = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
+  const commands = new Set(manifest.contributes.commands.map((command) => command.command));
+  const activationEvents = new Set(manifest.activationEvents);
+  const explorerViews = manifest.contributes.views?.explorer ?? [];
+  const titleMenus = manifest.contributes.menus?.['view/title'] ?? [];
+  const itemMenus = manifest.contributes.menus?.['view/item/context'] ?? [];
+
+  assert(commands.has('omniMemory.openMemory'), 'manifest is missing open memory command');
+  assert(commands.has('omniMemory.refreshExplorer'), 'manifest is missing refresh explorer command');
+  assert(activationEvents.has('onView:omniMemory.memories'), 'manifest is missing OmniMemory view activation');
+  assert(explorerViews.some((view) => view.id === 'omniMemory.memories'), 'manifest is missing OmniMemory Explorer view');
+  assert(titleMenus.some((menu) => menu.command === 'omniMemory.refreshExplorer'), 'manifest is missing Explorer refresh menu');
+  assert(itemMenus.some((menu) => menu.command === 'omniMemory.openMemory'), 'manifest is missing Explorer open menu');
 }
 
 async function assertLegacyDatabaseMigration(tempRoot) {
