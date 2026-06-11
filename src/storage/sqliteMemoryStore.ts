@@ -4,6 +4,13 @@ import initSqlJs, { Database } from 'sql.js';
 import { createId } from '../id';
 import { evaluateMemoryQuality } from '../memory/quality';
 import {
+  buildMemoryEmbeddingText,
+  cosineSimilarity,
+  createLocalEmbedding,
+  deserializeEmbedding,
+  serializeEmbedding
+} from '../retrieval/localEmbedding';
+import {
   CapturedCommit,
   CapturedConversation,
   MemoryCard,
@@ -24,6 +31,7 @@ interface SearchableMemoryRow extends SearchResult {
   lessons: string;
   filesChanged: string[];
   tags: string[];
+  embedding?: number[];
 }
 
 const searchStopWords = new Set([
@@ -155,6 +163,7 @@ export class SQLiteMemoryStore {
         card.markdownPath
       ]
     );
+    this.writeMemoryEmbedding(card);
     await this.save();
 
     return card;
@@ -230,6 +239,10 @@ export class SQLiteMemoryStore {
         id
       ]
     );
+    this.writeMemoryEmbedding({
+      ...existing,
+      ...update
+    });
     await this.save();
 
     return this.getMemoryCard(id);
@@ -391,16 +404,53 @@ export class SQLiteMemoryStore {
     return results;
   }
 
+  getMemoryEmbedding(memoryId: string): number[] | undefined {
+    const statement = this.database.prepare(
+      `SELECT vector
+       FROM embeddings
+       WHERE memory_id = ?
+       LIMIT 1`
+    );
+
+    try {
+      statement.bind([memoryId]);
+      if (!statement.step()) {
+        return undefined;
+      }
+
+      const vector = deserializeEmbedding(asString((statement.getAsObject() as Row).vector));
+      return vector.length > 0 ? vector : undefined;
+    } finally {
+      statement.free();
+    }
+  }
+
   searchMemories(query: string, limit = 20): SearchResult[] {
     const tokens = tokenizeQuery(query);
     if (tokens.length === 0) {
       return this.listRecentMemories(limit);
     }
 
+    const queryVector = createLocalEmbedding(query);
     const statement = this.database.prepare(
-      `SELECT id, title, problem, symptoms, root_cause, attempts, solution, files_changed, lessons, tags, status, confidence, created_at, markdown_path
-       FROM memory_cards
-       ORDER BY created_at DESC
+      `SELECT mc.id,
+              mc.title,
+              mc.problem,
+              mc.symptoms,
+              mc.root_cause,
+              mc.attempts,
+              mc.solution,
+              mc.files_changed,
+              mc.lessons,
+              mc.tags,
+              mc.status,
+              mc.confidence,
+              mc.created_at,
+              mc.markdown_path,
+              e.vector AS embedding_vector
+       FROM memory_cards mc
+       LEFT JOIN embeddings e ON e.memory_id = mc.id
+       ORDER BY mc.created_at DESC
        LIMIT 1000`
     );
 
@@ -416,7 +466,7 @@ export class SQLiteMemoryStore {
 
     return rows
       .map((row) => {
-        const score = scoreSearchRow(query, tokens, row);
+        const score = scoreSearchRow(query, tokens, queryVector, row);
         return { row, score };
       })
       .filter((result) => result.score.score > 0)
@@ -599,6 +649,47 @@ export class SQLiteMemoryStore {
     this.runMigration('ALTER TABLE memory_cards ADD COLUMN quality_score INTEGER NOT NULL DEFAULT 0');
     this.runMigration('ALTER TABLE memory_cards ADD COLUMN quality_warnings TEXT NOT NULL DEFAULT \'[]\'');
     this.database.run('CREATE INDEX IF NOT EXISTS idx_memory_cards_quality_score ON memory_cards(quality_score)');
+    this.database.run('DELETE FROM embeddings WHERE id NOT IN (SELECT MIN(id) FROM embeddings GROUP BY memory_id)');
+    this.database.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_embeddings_memory_id ON embeddings(memory_id)');
+    this.backfillMissingEmbeddings();
+  }
+
+  private writeMemoryEmbedding(source: Pick<MemoryCard, 'id' | 'title' | 'problem' | 'symptoms' | 'rootCause' | 'attempts' | 'solution' | 'filesChanged' | 'lessons' | 'tags'>): void {
+    const vector = serializeEmbedding(createLocalEmbedding(buildMemoryEmbeddingText(source)));
+
+    this.database.run(
+      `INSERT OR REPLACE INTO embeddings (id, memory_id, vector, created_at)
+       VALUES (COALESCE((SELECT id FROM embeddings WHERE memory_id = ?), ?), ?, ?, ?)`,
+      [
+        source.id,
+        createId('embedding'),
+        source.id,
+        vector,
+        new Date().toISOString()
+      ]
+    );
+  }
+
+  private backfillMissingEmbeddings(): void {
+    const statement = this.database.prepare(
+      `SELECT mc.*
+       FROM memory_cards mc
+       LEFT JOIN embeddings e ON e.memory_id = mc.id
+       WHERE e.memory_id IS NULL`
+    );
+    const cards: MemoryCard[] = [];
+
+    try {
+      while (statement.step()) {
+        cards.push(rowToMemoryCard(statement.getAsObject() as Row));
+      }
+    } finally {
+      statement.free();
+    }
+
+    for (const card of cards) {
+      this.writeMemoryEmbedding(card);
+    }
   }
 
   private async save(): Promise<void> {
@@ -659,13 +750,18 @@ function rowToSearchResult(row: Row): SearchResult {
 }
 
 function rowToSearchableResult(row: Row): SearchableMemoryRow {
+  const embedding = typeof row.embedding_vector === 'string'
+    ? deserializeEmbedding(row.embedding_vector)
+    : [];
+
   return {
     ...rowToSearchResult(row),
     symptoms: asString(row.symptoms),
     attempts: asString(row.attempts),
     lessons: asString(row.lessons),
     filesChanged: parseJsonArray(row.files_changed),
-    tags: parseJsonArray(row.tags)
+    tags: parseJsonArray(row.tags),
+    embedding: embedding.length > 0 ? embedding : undefined
   };
 }
 
@@ -720,6 +816,7 @@ function tokenizeQuery(query: string): string[] {
 function scoreSearchRow(
   query: string,
   tokens: string[],
+  queryVector: number[],
   row: SearchableMemoryRow
 ): { score: number; matchedFields: string[] } {
   const fields = [
@@ -761,6 +858,13 @@ function scoreSearchRow(
       score += 12;
       matchedFields.add('tags');
     }
+  }
+
+  const similarity = row.embedding ? cosineSimilarity(queryVector, row.embedding) : 0;
+  const canUseVectorOnly = tokens.length >= 4 && phrase.length >= 24 && similarity >= 0.22;
+  if (similarity >= 0.12 && (score > 0 || canUseVectorOnly)) {
+    score += Math.round(similarity * 40);
+    matchedFields.add('embedding');
   }
 
   return {

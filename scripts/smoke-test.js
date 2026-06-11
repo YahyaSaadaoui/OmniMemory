@@ -8,6 +8,7 @@ const { SQLiteMemoryStore } = require('../out/storage/sqliteMemoryStore');
 const { renderMemoryCardMarkdown, writeMemoryMarkdown } = require('../out/memory/markdown');
 const { parseMemoryMarkdown } = require('../out/memory/markdownParser');
 const { synthesizeMemory } = require('../out/memory/synthesizer');
+const { localEmbeddingDimensions } = require('../out/retrieval/localEmbedding');
 const { buildRetrievalQuery } = require('../out/retrieval/contextQuery');
 const { buildSimilaritySuggestionKey, shouldSuggestSimilarMemory } = require('../out/retrieval/similaritySuggestion');
 
@@ -62,6 +63,7 @@ async function main() {
     output: 'tests passed'
   });
   const verified = await store.updateStatus(card.id, 'Verified');
+  const cardEmbedding = store.getMemoryEmbedding(card.id);
 
   const schemaResults = store.searchMemories('schema mismatch');
   const fileResults = store.searchMemories('consumer.ts');
@@ -132,6 +134,7 @@ async function main() {
     .replace('## Tags\n\nN/A', '## Tags\n\n`payments` `typescript`');
   const parsedMarkdown = parseMemoryMarkdown(editedMarkdown);
   const syncedCard = await store.updateMemoryCardContent(parsedMarkdown.memoryId, parsedMarkdown.update);
+  const syncedEmbedding = store.getMemoryEmbedding(syncedCard.id);
   await store.refreshSimilarMemoryLinks(syncedCard.id);
   const syncedWithLinks = store.getMemoryCard(syncedCard.id);
   const relatedMarkdown = renderMemoryCardMarkdown(syncedWithLinks);
@@ -192,6 +195,7 @@ process.stdin.on('end', () => {
 
   assert(card.rootCause === 'Schema compatibility mismatch between producer and consumer.', 'root cause was not synthesized');
   assert(card.qualityScore >= 70, 'complete memory was scored too low');
+  assert(cardEmbedding && cardEmbedding.length === localEmbeddingDimensions, 'memory embedding was not stored');
   assert(verified && verified.status === 'Verified', 'memory was not marked verified');
   assert(verificationEvents.length === 1, 'verification event was not stored');
   assert(duplicate && duplicate.id === card.id, 'commit duplicate lookup did not find the memory');
@@ -200,10 +204,12 @@ process.stdin.on('end', () => {
   assert(reviewQueue.some((result) => result.id === weakCard.id), 'review queue did not include weak memory');
   assert(syncedCard && syncedCard.title === 'Payment Callback Retry Regression', 'Markdown sync did not update title');
   assert(syncedCard && syncedCard.qualityScore > weakCard.qualityScore, 'Markdown sync did not recompute quality');
+  assert(syncedEmbedding && syncedEmbedding.length === localEmbeddingDimensions, 'synced memory embedding was not refreshed');
   assert(syncedWithLinks.relatedMemories.some((link) => link.targetMemoryId === previousPaymentCard.id), 'similar memory link was not created');
   assert(relatedMarkdown.includes(previousPaymentCard.title), 'related memory was not rendered');
   assert(contextQuery.includes('Null provider response'), 'context query did not include selected text');
   assert(contextResults.some((result) => result.id === weakCard.id), 'context search did not find synced memory');
+  assert(contextResults.some((result) => result.id === weakCard.id && result.matchedFields.includes('embedding')), 'context search did not use embeddings');
   assert(shouldSuggestSimilarMemory(suggestionInput), 'diagnostic similarity threshold rejected a good match');
   assert(suggestionKey.includes(contextResults[0].id), 'diagnostic suggestion key did not include result id');
   assert(importedConversation.length <= 120, 'imported conversation was not truncated');
@@ -273,11 +279,57 @@ async function assertLegacyDatabaseMigration(tempRoot) {
     );
   `);
 
+  const now = new Date().toISOString();
+  db.run(
+    `INSERT INTO memory_cards (
+      id,
+      title,
+      problem,
+      symptoms,
+      root_cause,
+      attempts,
+      solution,
+      files_changed,
+      related_pr,
+      lessons,
+      confidence,
+      status,
+      tags,
+      created_at,
+      updated_at,
+      source_commit_id,
+      source_conversation_id,
+      markdown_path
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      'memory_legacy',
+      'Legacy Payment Timeout',
+      'Payment timeout handling failed.',
+      'Requests timed out during provider callbacks.',
+      'Timeout errors were not mapped to retryable provider failures.',
+      'Checked provider status and network retries.',
+      'Mapped timeout responses to retryable failures.',
+      JSON.stringify(['src/payments/provider.ts']),
+      null,
+      'Preserve retry state for external provider timeouts.',
+      0.8,
+      'Draft',
+      JSON.stringify(['payments', 'timeouts']),
+      now,
+      now,
+      null,
+      null,
+      null
+    ]
+  );
+
   fs.writeFileSync(legacyDbPath, Buffer.from(db.export()));
   db.close();
 
   const store = new SQLiteMemoryStore(legacyDbPath, process.cwd());
   await store.init();
+  const legacyEmbedding = store.getMemoryEmbedding('memory_legacy');
+  assert(legacyEmbedding && legacyEmbedding.length === localEmbeddingDimensions, 'legacy memory embedding was not backfilled');
   await store.insertCommit({
     id: 'commit_legacy',
     hash: 'legacy123',

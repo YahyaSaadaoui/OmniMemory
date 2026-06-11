@@ -39,6 +39,8 @@ For clean commit captures, OmniMemory checks whether that commit already has a m
 
 Search ranks local memories by title, tags, files changed, root cause, solution, problem, symptoms, lessons, and attempts.
 
+OmniMemory also stores deterministic local embeddings in SQLite and blends vector similarity into larger context searches without sending code or memory cards to an external service.
+
 Context search uses the active selection, nearby diagnostics, current line, surrounding code, and file name to answer whether a similar issue has already been captured.
 
 When diagnostic similarity search is enabled, OmniMemory watches active editor errors and warnings and suggests the best matching prior memory above the configured score threshold.
