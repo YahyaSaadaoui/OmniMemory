@@ -21,6 +21,7 @@
     "onCommand:omniMemory.generateFromClipboard",
     "onCommand:omniMemory.importConversationTranscript",
     "onCommand:omniMemory.scanActiveTextForSecrets",
+    "onCommand:omniMemory.exportMemoryBundle",
     "onCommand:omniMemory.searchMemories",
     "onCommand:omniMemory.findSimilarFromContext",
     "onCommand:omniMemory.updateMemoryStatus",
@@ -181,6 +182,11 @@
         "title": "OmniMemory: Scan Active Text For Secrets"
       },
       {
+        "command": "omniMemory.exportMemoryBundle",
+        "title": "OmniMemory: Export Memory Bundle",
+        "icon": "$(cloud-download)"
+      },
+      {
         "command": "omniMemory.searchMemories",
         "title": "OmniMemory: Search Memories"
       },
@@ -236,6 +242,11 @@
           "command": "omniMemory.refreshExplorer",
           "when": "view == omniMemory.memories",
           "group": "navigation"
+        },
+        {
+          "command": "omniMemory.exportMemoryBundle",
+          "when": "view == omniMemory.memories",
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [

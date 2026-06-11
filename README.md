@@ -28,6 +28,8 @@ The Explorer sidebar includes an OmniMemory view with Review Queue and Recent Me
 
 Regex sanitization redacts common secrets before synthesis/storage and records category counts in each memory card's Security Review section.
 
+Memory bundles can be exported as JSON for backups or Markdown for readable reviews.
+
 ## Commands
 
 - `OmniMemory: Generate Memory From Current Context`
@@ -36,6 +38,7 @@ Regex sanitization redacts common secrets before synthesis/storage and records c
 - `OmniMemory: Generate Memory From Clipboard`
 - `OmniMemory: Import Conversation Transcript`
 - `OmniMemory: Scan Active Text For Secrets`
+- `OmniMemory: Export Memory Bundle`
 - `OmniMemory: Search Memories`
 - `OmniMemory: Find Similar Memories From Context`
 - `OmniMemory: Update Memory Status`

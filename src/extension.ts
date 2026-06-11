@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { detectConversationTool, normalizeImportedConversation } from './capture/importedConversation';
 import { getConfig, getWorkspaceRoot, resolveWorkspacePath } from './config';
+import { renderMemoryBundleJson, renderMemoryBundleMarkdown } from './export/memoryBundle';
 import { captureGitContext, getCurrentGitHead, GitCaptureMode } from './git/gitCapture';
 import { createId } from './id';
 import { generateMemoryDraft } from './memory/generator';
@@ -30,6 +31,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('omniMemory.generateFromClipboard', () => runCommand(context, generateFromClipboard)),
     vscode.commands.registerCommand('omniMemory.importConversationTranscript', () => runCommand(context, importConversationTranscript)),
     vscode.commands.registerCommand('omniMemory.scanActiveTextForSecrets', () => runCommand(context, scanActiveTextForSecrets)),
+    vscode.commands.registerCommand('omniMemory.exportMemoryBundle', () => runCommand(context, exportMemoryBundle)),
     vscode.commands.registerCommand('omniMemory.searchMemories', () => runCommand(context, searchMemories)),
     vscode.commands.registerCommand('omniMemory.findSimilarFromContext', () => runCommand(context, findSimilarFromContext)),
     vscode.commands.registerCommand('omniMemory.updateMemoryStatus', () => runCommand(context, updateMemoryStatus)),
@@ -159,6 +161,70 @@ async function scanActiveTextForSecrets(): Promise<void> {
     language: 'markdown'
   });
   await vscode.window.showTextDocument(document);
+}
+
+async function exportMemoryBundle(context: vscode.ExtensionContext): Promise<void> {
+  const root = getWorkspaceRoot();
+  const db = await getStore(context);
+  const memories = db.listMemoryCards();
+
+  if (memories.length === 0) {
+    await vscode.window.showInformationMessage('No OmniMemory cards exist yet.');
+    return;
+  }
+
+  const pickedFormat = await vscode.window.showQuickPick(
+    [
+      {
+        label: 'JSON',
+        description: 'Structured backup for tools and importers',
+        extension: 'json'
+      },
+      {
+        label: 'Markdown',
+        description: 'Readable report for review or sharing',
+        extension: 'md'
+      }
+    ],
+    {
+      title: 'Export OmniMemory Bundle',
+      placeHolder: 'Choose an export format'
+    }
+  );
+
+  if (!pickedFormat) {
+    return;
+  }
+
+  const exportedAt = new Date().toISOString();
+  const defaultFileName = `omnimemory-export-${formatExportTimestamp(exportedAt)}.${pickedFormat.extension}`;
+  const target = await vscode.window.showSaveDialog({
+    title: 'Export OmniMemory Bundle',
+    defaultUri: vscode.Uri.file(path.join(root, '.memory', defaultFileName)),
+    filters: pickedFormat.extension === 'json'
+      ? { JSON: ['json'] }
+      : { Markdown: ['md'] }
+  });
+
+  if (!target) {
+    return;
+  }
+
+  const content = pickedFormat.extension === 'json'
+    ? renderMemoryBundleJson(memories, exportedAt)
+    : renderMemoryBundleMarkdown(memories, exportedAt);
+
+  await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(target.fsPath)));
+  await vscode.workspace.fs.writeFile(target, Buffer.from(content, 'utf8'));
+
+  const action = await vscode.window.showInformationMessage(
+    `OmniMemory exported ${memories.length} memor${memories.length === 1 ? 'y' : 'ies'}.`,
+    'Open Export'
+  );
+
+  if (action === 'Open Export') {
+    await vscode.window.showTextDocument(target);
+  }
 }
 
 async function generateFromGitContext(context: vscode.ExtensionContext): Promise<void> {
@@ -821,6 +887,10 @@ ${summary}
 ${truncate(report.text, 20000)}
 \`\`\`
 `;
+}
+
+function formatExportTimestamp(value: string): string {
+  return value.replace(/[:.]/g, '-');
 }
 
 async function openMemory(context: vscode.ExtensionContext, id: string): Promise<void> {

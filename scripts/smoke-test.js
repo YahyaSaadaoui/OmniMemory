@@ -4,6 +4,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const initSqlJs = require('sql.js');
 const { detectConversationTool, normalizeImportedConversation } = require('../out/capture/importedConversation');
+const { renderMemoryBundleJson, renderMemoryBundleMarkdown } = require('../out/export/memoryBundle');
 const { captureGitContext } = require('../out/git/gitCapture');
 const { generateMemoryDraft } = require('../out/memory/generator');
 const { SQLiteMemoryStore } = require('../out/storage/sqliteMemoryStore');
@@ -68,6 +69,9 @@ async function main() {
   })));
   const redactedCard = store.getMemoryCard(card.id);
   const securityMarkdown = renderMemoryCardMarkdown(redactedCard);
+  const bundleJson = renderMemoryBundleJson([redactedCard], '2026-01-01T00:00:00.000Z');
+  const parsedBundle = JSON.parse(bundleJson);
+  const bundleMarkdown = renderMemoryBundleMarkdown([redactedCard], '2026-01-01T00:00:00.000Z');
   const markdownPath = await writeMemoryMarkdown(memoryDir, card);
   await store.setMarkdownPath(card.id, path.relative(tempRoot, markdownPath));
   await store.addVerificationEvent({
@@ -84,6 +88,7 @@ async function main() {
   const fileResults = store.searchMemories('consumer.ts');
   const tagResults = store.searchMemories('kafka');
   const verificationEvents = store.listVerificationEvents(card.id);
+  const exportedCards = store.listMemoryCards();
   const duplicate = store.findMemoryByCommitHash('abc123');
   const weakConversation = {
     id: 'conversation_weak',
@@ -216,6 +221,11 @@ process.stdin.on('end', () => {
   assert(redactedCard.redactionEvents.length === 2, 'redaction events were not stored');
   assert(securityMarkdown.includes('## Security Review'), 'security review was not rendered');
   assert(securityMarkdown.includes('GitHub token'), 'security review did not include token label');
+  assert(exportedCards.some((memory) => memory.id === card.id), 'full memory card export listing did not include card');
+  assert(parsedBundle.schemaVersion === 1, 'JSON bundle schema version was not set');
+  assert(parsedBundle.memoryCount === 1, 'JSON bundle memory count was wrong');
+  assert(bundleMarkdown.includes('# OmniMemory Export'), 'Markdown bundle title was not rendered');
+  assert(bundleMarkdown.includes(redactedCard.title), 'Markdown bundle did not include memory');
   assert(cardEmbedding && cardEmbedding.length === localEmbeddingDimensions, 'memory embedding was not stored');
   assert(verified && verified.status === 'Verified', 'memory was not marked verified');
   assert(verificationEvents.length === 1, 'verification event was not stored');
@@ -264,8 +274,10 @@ function assertExtensionManifest() {
   assert(commands.has('omniMemory.openMemory'), 'manifest is missing open memory command');
   assert(commands.has('omniMemory.refreshExplorer'), 'manifest is missing refresh explorer command');
   assert(commands.has('omniMemory.scanActiveTextForSecrets'), 'manifest is missing secret scan command');
+  assert(commands.has('omniMemory.exportMemoryBundle'), 'manifest is missing memory export command');
   assert(activationEvents.has('onView:omniMemory.memories'), 'manifest is missing OmniMemory view activation');
   assert(activationEvents.has('onCommand:omniMemory.scanActiveTextForSecrets'), 'manifest is missing secret scan activation');
+  assert(activationEvents.has('onCommand:omniMemory.exportMemoryBundle'), 'manifest is missing memory export activation');
   assert(explorerViews.some((view) => view.id === 'omniMemory.memories'), 'manifest is missing OmniMemory Explorer view');
   assert(titleMenus.some((menu) => menu.command === 'omniMemory.refreshExplorer'), 'manifest is missing Explorer refresh menu');
   assert(itemMenus.some((menu) => menu.command === 'omniMemory.openMemory'), 'manifest is missing Explorer open menu');

@@ -572,6 +572,30 @@ export class SQLiteMemoryStore {
     return results;
   }
 
+  listMemoryCards(limit = 1000): MemoryCard[] {
+    const statement = this.database.prepare(
+      `SELECT id
+       FROM memory_cards
+       ORDER BY created_at DESC
+       LIMIT ?`
+    );
+    const cards: MemoryCard[] = [];
+
+    try {
+      statement.bind([limit]);
+      while (statement.step()) {
+        const card = this.getMemoryCard(asString((statement.getAsObject() as Row).id));
+        if (card) {
+          cards.push(card);
+        }
+      }
+    } finally {
+      statement.free();
+    }
+
+    return cards;
+  }
+
   listReviewQueue(limit = 50): SearchResult[] {
     const statement = this.database.prepare(
       `SELECT id, title, problem, root_cause, solution, status, confidence, quality_score, quality_warnings, created_at, markdown_path
