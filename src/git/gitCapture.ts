@@ -6,6 +6,8 @@ import { truncate, uniqueStrings } from '../text';
 
 const execFileAsync = promisify(execFile);
 
+export type GitCaptureMode = 'auto' | 'last-commit';
+
 async function runGit(args: string[], cwd: string): Promise<string | null> {
   try {
     const result = await execFileAsync('git', args, {
@@ -76,7 +78,11 @@ async function collectLastCommitDiff(gitRoot: string, hash: string | null): Prom
   };
 }
 
-export async function captureGitContext(workspaceRoot: string, maxDiffCharacters: number): Promise<CapturedCommit> {
+export async function captureGitContext(
+  workspaceRoot: string,
+  maxDiffCharacters: number,
+  mode: GitCaptureMode = 'auto'
+): Promise<CapturedCommit> {
   const gitRoot = await runGit(['rev-parse', '--show-toplevel'], workspaceRoot);
   const now = new Date().toISOString();
 
@@ -99,11 +105,13 @@ export async function captureGitContext(workspaceRoot: string, maxDiffCharacters
   const hash = await runGit(['rev-parse', 'HEAD'], gitRoot);
   const message = await runGit(['log', '-1', '--pretty=%B'], gitRoot);
   const author = await runGit(['log', '-1', '--pretty=%an <%ae>'], gitRoot);
-  const working = await collectWorkingDiff(gitRoot);
-  const hasWorkingChanges = Boolean(working.diff || working.files.length > 0);
-  const lastCommit = working.diff || working.files.length > 0
+  const working = mode === 'last-commit'
     ? { diff: '', summary: '', files: [] }
-    : await collectLastCommitDiff(gitRoot, hash);
+    : await collectWorkingDiff(gitRoot);
+  const hasWorkingChanges = Boolean(working.diff || working.files.length > 0);
+  const lastCommit = mode === 'last-commit' || !hasWorkingChanges
+    ? await collectLastCommitDiff(gitRoot, hash)
+    : { diff: '', summary: '', files: [] };
   const diff = working.diff || lastCommit.diff;
   const summary = [working.summary, lastCommit.summary].filter(Boolean).join('\n\n');
   const files = uniqueStrings([...working.files, ...lastCommit.files]);

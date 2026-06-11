@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { detectConversationTool, normalizeImportedConversation } from './capture/importedConversation';
 import { getConfig, getWorkspaceRoot, resolveWorkspacePath } from './config';
-import { captureGitContext, getCurrentGitHead } from './git/gitCapture';
+import { captureGitContext, getCurrentGitHead, GitCaptureMode } from './git/gitCapture';
 import { createId } from './id';
 import { generateMemoryDraft } from './memory/generator';
 import { overwriteMemoryMarkdown, renderMemoryCardMarkdown, writeMemoryMarkdown } from './memory/markdown';
@@ -20,6 +20,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(
     vscode.commands.registerCommand('omniMemory.generateFromCurrentContext', () => runCommand(context, generateFromCurrentContext)),
     vscode.commands.registerCommand('omniMemory.generateFromGitContext', () => runCommand(context, generateFromGitContext)),
+    vscode.commands.registerCommand('omniMemory.generateFromLastCommit', () => runCommand(context, generateFromLastCommit)),
     vscode.commands.registerCommand('omniMemory.generateFromClipboard', () => runCommand(context, generateFromClipboard)),
     vscode.commands.registerCommand('omniMemory.importConversationTranscript', () => runCommand(context, importConversationTranscript)),
     vscode.commands.registerCommand('omniMemory.searchMemories', () => runCommand(context, searchMemories)),
@@ -139,11 +140,31 @@ async function generateFromGitContext(context: vscode.ExtensionContext): Promise
   );
 }
 
+async function generateFromLastCommit(context: vscode.ExtensionContext): Promise<void> {
+  const activeText = readActiveEditorText();
+  const conversationText = activeText.trim()
+    ? activeText
+    : await askForConversationFallback();
+
+  if (conversationText === undefined) {
+    return;
+  }
+
+  await generateMemory(
+    context,
+    conversationText,
+    'OmniMemory is generating a memory from the last Git commit',
+    undefined,
+    'last-commit'
+  );
+}
+
 async function generateMemory(
   context: vscode.ExtensionContext,
   rawConversationText: string,
   progressTitle: string,
-  conversationTool?: string
+  conversationTool?: string,
+  gitCaptureMode: GitCaptureMode = 'auto'
 ): Promise<void> {
   const root = getWorkspaceRoot();
   const config = getConfig();
@@ -163,7 +184,7 @@ async function generateMemory(
         content: sanitizeEngineeringText(rawConversationText.trim() || 'No conversation text was captured.'),
         timestamp: new Date().toISOString()
       };
-      const capturedCommit = await captureGitContext(root, config.maxDiffCharacters);
+      const capturedCommit = await captureGitContext(root, config.maxDiffCharacters, gitCaptureMode);
       const commit = {
         ...capturedCommit,
         diff: sanitizeEngineeringText(capturedCommit.diff),
@@ -521,7 +542,7 @@ function startCommitDetection(context: vscode.ExtensionContext): void {
       );
 
       if (action === 'Generate Memory') {
-        await generateFromCurrentContext(context);
+        await generateFromLastCommit(context);
       }
     } finally {
       promptInFlight = false;

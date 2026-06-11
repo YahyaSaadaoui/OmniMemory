@@ -20,12 +20,15 @@ The `command` provider receives conversation and Git context as JSON on stdin an
 
 When commit detection is enabled, OmniMemory watches the current Git `HEAD` and prompts to generate a memory after a new commit appears.
 
+Detected commits and `OmniMemory: Generate Memory From Last Git Commit` capture the `HEAD` commit diff even if the working tree has unrelated edits.
+
 For clean commit captures, OmniMemory checks whether that commit already has a memory and offers to open the existing card instead of creating a duplicate.
 
 ## Commands
 
 - `OmniMemory: Generate Memory From Current Context`
 - `OmniMemory: Generate Memory From Git Context`
+- `OmniMemory: Generate Memory From Last Git Commit`
 - `OmniMemory: Generate Memory From Clipboard`
 - `OmniMemory: Import Conversation Transcript`
 - `OmniMemory: Search Memories`

@@ -1,8 +1,10 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { execFileSync } = require('child_process');
 const initSqlJs = require('sql.js');
 const { detectConversationTool, normalizeImportedConversation } = require('../out/capture/importedConversation');
+const { captureGitContext } = require('../out/git/gitCapture');
 const { generateMemoryDraft } = require('../out/memory/generator');
 const { SQLiteMemoryStore } = require('../out/storage/sqliteMemoryStore');
 const { renderMemoryCardMarkdown, writeMemoryMarkdown } = require('../out/memory/markdown');
@@ -226,6 +228,7 @@ process.stdin.on('end', () => {
 
   store.close();
   await assertLegacyDatabaseMigration(tempRoot);
+  await assertLastCommitCaptureMode(tempRoot);
   fs.rmSync(tempRoot, { recursive: true, force: true });
 
   console.log('OmniMemory smoke test passed');
@@ -343,6 +346,44 @@ async function assertLegacyDatabaseMigration(tempRoot) {
     createdAt: new Date().toISOString()
   });
   store.close();
+}
+
+async function assertLastCommitCaptureMode(tempRoot) {
+  const repo = fs.mkdtempSync(path.join(tempRoot, 'git-capture-'));
+  runGit(['init'], repo);
+  runGit(['config', 'user.email', 'smoke@example.com'], repo);
+  runGit(['config', 'user.name', 'Smoke Test'], repo);
+
+  fs.writeFileSync(
+    path.join(repo, 'committed.txt'),
+    'committed provider validation\n',
+    'utf8'
+  );
+  runGit(['add', 'committed.txt'], repo);
+  runGit(['commit', '-m', 'add committed provider validation'], repo);
+
+  fs.writeFileSync(
+    path.join(repo, 'working.txt'),
+    'unrelated working tree change\n',
+    'utf8'
+  );
+
+  const automaticCapture = await captureGitContext(repo, 50000);
+  const lastCommitCapture = await captureGitContext(repo, 50000, 'last-commit');
+
+  assert(automaticCapture.hasWorkingChanges, 'automatic Git capture did not detect working changes');
+  assert(automaticCapture.filesChanged.includes('working.txt'), 'automatic Git capture did not include working file');
+  assert(!lastCommitCapture.hasWorkingChanges, 'last commit capture was marked as working changes');
+  assert(lastCommitCapture.filesChanged.includes('committed.txt'), 'last commit capture did not include committed file');
+  assert(!lastCommitCapture.filesChanged.includes('working.txt'), 'last commit capture included unrelated working file');
+  assert(lastCommitCapture.diff.includes('committed provider validation'), 'last commit capture did not include committed diff');
+}
+
+function runGit(args, cwd) {
+  execFileSync('git', args, {
+    cwd,
+    stdio: 'pipe'
+  });
 }
 
 function assert(condition, message) {

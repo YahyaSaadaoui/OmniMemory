@@ -16,6 +16,7 @@
     "onStartupFinished",
     "onCommand:omniMemory.generateFromCurrentContext",
     "onCommand:omniMemory.generateFromGitContext",
+    "onCommand:omniMemory.generateFromLastCommit",
     "onCommand:omniMemory.generateFromClipboard",
     "onCommand:omniMemory.importConversationTranscript",
     "onCommand:omniMemory.searchMemories",
@@ -158,6 +159,10 @@
       {
         "command": "omniMemory.generateFromGitContext",
         "title": "OmniMemory: Generate Memory From Git Context"
+      },
+      {
+        "command": "omniMemory.generateFromLastCommit",
+        "title": "OmniMemory: Generate Memory From Last Git Commit"
       },
       {
         "command": "omniMemory.generateFromClipboard",
